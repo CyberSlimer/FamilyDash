@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Family Calendar Dashboard</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,600;1,9..144,300&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --cream: #FAF8F3;
+            --warm-white: #FFFEF9;
+            --charcoal: #2C2C2C;
+            --soft-gray: #8B8B8B;
+            --sage: #9CAF88;
+            --terracotta: #D4836F;
+            --sky: #A8C5E6;
+            --lavender: #C5B8D8;
+            --border: #E8E5DD;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'DM Sans', sans-serif;
+            background: var(--cream);
+            color: var(--charcoal);
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        .dashboard {
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header */
+        .header {
+            background: var(--warm-white);
+            border-bottom: 2px solid var(--border);
+            padding: 1.5rem 2.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.03);
+        }
+
+        .header-left {
+            display: flex;
+            align-items: baseline;
+            gap: 1.5rem;
+        }
+
+        .date-display {
+            font-family: 'Fraunces', serif;
+            font-size: 2rem;
+            font-weight: 600;
+            color: var(--charcoal);
+            letter-spacing: -0.02em;
+        }
+
+        .time-display {
+            font-size: 1.5rem;
+            font-weight: 500;
+            color: var(--soft-gray);
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 2rem;
+        }
+
+        .weather {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 0.75rem 1.5rem;
+            background: linear-gradient(135deg, var(--sky) 0%, var(--lavender) 100%);
+            border-radius: 2rem;
+            color: white;
+            font-weight: 500;
+        }
+
+        .weather-temp {
+            font-size: 1.5rem;
+            font-weight: 600;
+        }
+
+        .weather-icon {
+            font-size: 1.8rem;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .tab {
+            padding: 0.75rem 2rem;
+            background: transparent;
+            border: 2px solid var(--border);
+            border-radius: 1.5rem;
+            font-family: 'DM Sans', sans-serif;
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--soft-gray);
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .tab:hover {
+            border-color: var(--sage);
+            color: var(--charcoal);
+            transform: translateY(-2px);
+        }
+
+        .tab.active {
+            background: var(--sage);
+            border-color: var(--sage);
+            color: white;
+            box-shadow: 0 4px 12px rgba(156, 175, 136, 0.3);
+        }
+
+        /* Main Content */
+        .content {
+            flex: 1;
+            overflow: hidden;
+            padding: 2rem 2.5rem;
+        }
+
+        /* Weekly Calendar */
+        .weekly-calendar {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .week-header {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .day-header {
+            text-align: center;
+            padding: 1rem;
+            background: var(--warm-white);
+            border-radius: 1rem;
+            border: 2px solid var(--border);
+        }
+
+        .day-name {
+            font-family: 'Fraunces', serif;
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--charcoal);
+            margin-bottom: 0.25rem;
+        }
+
+        .day-date {
+            font-size: 0.9rem;
+            color: var(--soft-gray);
+        }
+
+        .day-header.today {
+            background: var(--sage);
+            border-color: var(--sage);
+            box-shadow: 0 4px 16px rgba(156, 175, 136, 0.3);
+        }
+
+        .day-header.today .day-name,
+        .day-header.today .day-date {
+            color: white;
+        }
+
+        .week-grid {
+            flex: 1;
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 1rem;
+            overflow: hidden;
+        }
+
+        .day-column {
+            background: var(--warm-white);
+            border-radius: 1rem;
+            border: 2px solid var(--border);
+            padding: 1rem;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .day-column.today {
+            border-color: var(--sage);
+            box-shadow: 0 4px 16px rgba(156, 175, 136, 0.15);
+        }
+
+        .event {
+            padding: 0.75rem;
+            border-radius: 0.75rem;
+            border-left: 4px solid;
+            background: rgba(255, 255, 255, 0.6);
+            animation: slideIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .event.calendar-1 { border-left-color: var(--terracotta); }
+        .event.calendar-2 { border-left-color: var(--sky); }
+        .event.calendar-3 { border-left-color: var(--lavender); }
+        .event.calendar-4 { border-left-color: var(--sage); }
+
+        .event-time {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--soft-gray);
+            margin-bottom: 0.25rem;
+        }
+
+        .event-title {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--charcoal);
+            line-height: 1.3;
+        }
+
+        .event-calendar {
+            font-size: 0.7rem;
+            color: var(--soft-gray);
+            margin-top: 0.25rem;
+            font-weight: 500;
+        }
+
+        /* Grocery List */
+        .grocery-list {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        .grocery-header {
+            font-family: 'Fraunces', serif;
+            font-size: 2.5rem;
+            font-weight: 600;
+            color: var(--charcoal);
+            margin-bottom: 2rem;
+            text-align: center;
+        }
+
+        .grocery-input-section {
+            display: flex;
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .grocery-input {
+            flex: 1;
+            padding: 1rem 1.5rem;
+            font-family: 'DM Sans', sans-serif;
+            font-size: 1.1rem;
+            border: 2px solid var(--border);
+            border-radius: 1rem;
+            background: var(--warm-white);
+            color: var(--charcoal);
+            transition: all 0.3s;
+        }
+
+        .grocery-input:focus {
+            outline: none;
+            border-color: var(--sage);
+            box-shadow: 0 0 0 4px rgba(156, 175, 136, 0.1);
+        }
+
+        .grocery-add-btn {
+            padding: 1rem 2.5rem;
+            background: var(--sage);
+            border: none;
+            border-radius: 1rem;
+            color: white;
+            font-family: 'DM Sans', sans-serif;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .grocery-add-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(156, 175, 136, 0.4);
+        }
+
+        .grocery-items {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .grocery-item {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            padding: 1.25rem;
+            background: var(--warm-white);
+            border: 2px solid var(--border);
+            border-radius: 1rem;
+            transition: all 0.3s;
+            animation: slideIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .grocery-item:hover {
+            border-color: var(--sage);
+        }
+
+        .grocery-item.checked {
+            opacity: 0.5;
+            background: rgba(255, 255, 255, 0.5);
+        }
+
+        .grocery-checkbox {
+            width: 24px;
+            height: 24px;
+            cursor: pointer;
+            accent-color: var(--sage);
+        }
+
+        .grocery-item-text {
+            flex: 1;
+            font-size: 1.1rem;
+            color: var(--charcoal);
+        }
+
+        .grocery-item.checked .grocery-item-text {
+            text-decoration: line-through;
+            color: var(--soft-gray);
+        }
+
+        .grocery-delete-btn {
+            padding: 0.5rem 1rem;
+            background: var(--terracotta);
+            border: none;
+            border-radius: 0.5rem;
+            color: white;
+            font-family: 'DM Sans', sans-serif;
+            font-weight: 600;
+            cursor: pointer;
+            opacity: 0;
+            transition: all 0.3s;
+        }
+
+        .grocery-item:hover .grocery-delete-btn {
+            opacity: 1;
+        }
+
+        .grocery-delete-btn:hover {
+            transform: scale(1.05);
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 4rem 2rem;
+            color: var(--soft-gray);
+        }
+
+        .empty-state-icon {
+            font-size: 4rem;
+            margin-bottom: 1rem;
+            opacity: 0.3;
+        }
+
+        .empty-state-text {
+            font-size: 1.2rem;
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: var(--border);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--sage);
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #8B9E79;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        function CalendarDashboard() {
+            const [currentTime, setCurrentTime] = useState(new Date());
+            const [activeTab, setActiveTab] = useState('calendar');
+            const [groceryItems, setGroceryItems] = useState([]);
+            const [newItem, setNewItem] = useState('');
+            const [weather, setWeather] = useState({ temp: '--', condition: '🌤️' });
+            const [events, setEvents] = useState([]);
+
+            // Update time every second
+            useEffect(() => {
+                const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+                return () => clearInterval(timer);
+            }, []);
+
+            // Load grocery items from storage
+            useEffect(() => {
+                loadGroceryItems();
+            }, []);
+
+            // Fetch calendar events from API
+            useEffect(() => {
+                async function fetchEvents() {
+                    try {
+                        const response = await fetch('http://localhost:5000/api/events');
+                        const data = await response.json();
+                        setEvents(data);
+                    } catch (error) {
+                        console.error('Error fetching events:', error);
+                        // Fallback to mock data if API is not available
+                        setEvents([
+                            { id: 1, title: 'Team Meeting', time: '9:00 AM', day: 1, calendar: 'calendar-2' },
+                            { id: 2, title: 'Doctor Appointment', time: '2:00 PM', day: 2, calendar: 'calendar-1' },
+                        ]);
+                    }
+                }
+                
+                fetchEvents();
+                // Refresh every 5 minutes
+                const interval = setInterval(fetchEvents, 5 * 60 * 1000);
+                return () => clearInterval(interval);
+            }, []);
+            
+            // Fetch weather from API
+            useEffect(() => {
+                async function fetchWeather() {
+                    try {
+                        const response = await fetch('http://localhost:5000/api/weather');
+                        const data = await response.json();
+                        setWeather(data);
+                    } catch (error) {
+                        console.error('Error fetching weather:', error);
+                    }
+                }
+                
+                fetchWeather();
+                // Update every 30 minutes
+                const interval = setInterval(fetchWeather, 30 * 60 * 1000);
+                return () => clearInterval(interval);
+            }, []);
+
+            // Grocery list functions
+            async function loadGroceryItems() {
+                try {
+                    const result = await window.storage.get('grocery-items');
+                    if (result && result.value) {
+                        setGroceryItems(JSON.parse(result.value));
+                    }
+                } catch (error) {
+                    console.log('No existing grocery list found');
+                    setGroceryItems([]);
+                }
+            }
+
+            async function saveGroceryItems(items) {
+                try {
+                    await window.storage.set('grocery-items', JSON.stringify(items));
+                } catch (error) {
+                    console.error('Failed to save grocery items:', error);
+                }
+            }
+
+            function addGroceryItem() {
+                if (newItem.trim()) {
+                    const newItems = [...groceryItems, { id: Date.now(), text: newItem, checked: false }];
+                    setGroceryItems(newItems);
+                    saveGroceryItems(newItems);
+                    setNewItem('');
+                }
+            }
+
+            function toggleGroceryItem(id) {
+                const newItems = groceryItems.map(item =>
+                    item.id === id ? { ...item, checked: !item.checked } : item
+                );
+                setGroceryItems(newItems);
+                saveGroceryItems(newItems);
+            }
+
+            function deleteGroceryItem(id) {
+                const newItems = groceryItems.filter(item => item.id !== id);
+                setGroceryItems(newItems);
+                saveGroceryItems(newItems);
+            }
+
+            // Get week days starting from today
+            function getWeekDays() {
+                const days = [];
+                const today = new Date();
+                const startOfWeek = new Date(today);
+                startOfWeek.setDate(today.getDate() - today.getDay()); // Start on Sunday
+
+                for (let i = 0; i < 7; i++) {
+                    const day = new Date(startOfWeek);
+                    day.setDate(startOfWeek.getDate() + i);
+                    days.push(day);
+                }
+                return days;
+            }
+
+            const weekDays = getWeekDays();
+            const today = new Date();
+
+            function formatDate(date) {
+                return date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+            }
+
+            function formatTime(date) {
+                return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+            }
+
+            function isSameDay(date1, date2) {
+                return date1.getDate() === date2.getDate() &&
+                       date1.getMonth() === date2.getMonth() &&
+                       date1.getFullYear() === date2.getFullYear();
+            }
+
+            return (
+                <div className="dashboard">
+                    <header className="header">
+                        <div className="header-left">
+                            <div className="date-display">{formatDate(currentTime)}</div>
+                            <div className="time-display">{formatTime(currentTime)}</div>
+                        </div>
+                        <div className="header-right">
+                            <div className="weather">
+                                <span className="weather-icon">{weather.condition}</span>
+                                <span className="weather-temp">{weather.temp}°F</span>
+                            </div>
+                            <div className="tabs">
+                                <button 
+                                    className={`tab ${activeTab === 'calendar' ? 'active' : ''}`}
+                                    onClick={() => setActiveTab('calendar')}
+                                >
+                                    Calendar
+                                </button>
+                                <button 
+                                    className={`tab ${activeTab === 'grocery' ? 'active' : ''}`}
+                                    onClick={() => setActiveTab('grocery')}
+                                >
+                                    Grocery List
+                                </button>
+                            </div>
+                        </div>
+                    </header>
+
+                    <main className="content">
+                        {activeTab === 'calendar' ? (
+                            <div className="weekly-calendar">
+                                <div className="week-header">
+                                    {weekDays.map((day, index) => (
+                                        <div 
+                                            key={index} 
+                                            className={`day-header ${isSameDay(day, today) ? 'today' : ''}`}
+                                        >
+                                            <div className="day-name">
+                                                {day.toLocaleDateString('en-US', { weekday: 'short' })}
+                                            </div>
+                                            <div className="day-date">
+                                                {day.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                                <div className="week-grid">
+                                    {weekDays.map((day, dayIndex) => (
+                                        <div 
+                                            key={dayIndex} 
+                                            className={`day-column ${isSameDay(day, today) ? 'today' : ''}`}
+                                        >
+                                            {events
+                                                .filter(event => event.day === dayIndex)
+                                                .map(event => (
+                                                    <div key={event.id} className={`event ${event.calendar}`}>
+                                                        <div className="event-time">{event.time}</div>
+                                                        <div className="event-title">{event.title}</div>
+                                                        <div className="event-calendar">
+                                                            {event.calendar === 'calendar-1' ? 'Personal' :
+                                                             event.calendar === 'calendar-2' ? 'Work' :
+                                                             event.calendar === 'calendar-3' ? 'Family' : 'Other'}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="grocery-list">
+                                <h2 className="grocery-header">Grocery List</h2>
+                                <div className="grocery-input-section">
+                                    <input
+                                        type="text"
+                                        className="grocery-input"
+                                        placeholder="Add an item..."
+                                        value={newItem}
+                                        onChange={(e) => setNewItem(e.target.value)}
+                                        onKeyPress={(e) => e.key === 'Enter' && addGroceryItem()}
+                                    />
+                                    <button className="grocery-add-btn" onClick={addGroceryItem}>
+                                        Add Item
+                                    </button>
+                                </div>
+                                <div className="grocery-items">
+                                    {groceryItems.length === 0 ? (
+                                        <div className="empty-state">
+                                            <div className="empty-state-icon">🛒</div>
+                                            <div className="empty-state-text">Your grocery list is empty</div>
+                                        </div>
+                                    ) : (
+                                        groceryItems.map(item => (
+                                            <div key={item.id} className={`grocery-item ${item.checked ? 'checked' : ''}`}>
+                                                <input
+                                                    type="checkbox"
+                                                    className="grocery-checkbox"
+                                                    checked={item.checked}
+                                                    onChange={() => toggleGroceryItem(item.id)}
+                                                />
+                                                <span className="grocery-item-text">{item.text}</span>
+                                                <button 
+                                                    className="grocery-delete-btn"
+                                                    onClick={() => deleteGroceryItem(item.id)}
+                                                >
+                                                    Delete
+                                                </button>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </main>
+                </div>
+            );
+        }
+
+        ReactDOM.render(<CalendarDashboard />, document.getElementById('root'));
+    </script>
+</body>
+</html>
