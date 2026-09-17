@@ -16,7 +16,8 @@ import json
 import re
 from urllib.parse import urlparse
 
-from calendar_sync import CalendarSync
+from calendar_sync import (CalendarSync, DEFAULT_COLORS, read_raw_config,
+                           write_raw_config, test_calendar)
 
 # Paths
 basedir = os.path.abspath(os.path.dirname(__file__))
@@ -621,6 +622,149 @@ def calendar_refresh():
     """Force an immediate re-sync of all calendars."""
     calendar_sync.refresh()
     return jsonify(calendar_sync.status())
+
+# ---- Calendar management (reads/writes config/calendars.json) --------------
+
+CALENDAR_FIELDS = ('name', 'type', 'url', 'username', 'password', 'color', 'calendars', 'enabled')
+
+def _slugify(text):
+    slug = re.sub(r'[^a-z0-9]+', '-', (text or '').lower()).strip('-')
+    return slug or 'calendar'
+
+def _unique_calendar_id(name, existing_ids):
+    base = _slugify(name)
+    candidate, n = base, 2
+    while candidate in existing_ids:
+        candidate, n = f'{base}-{n}', n + 1
+    return candidate
+
+def _public_calendar(entry, index, status_by_id):
+    """Calendar entry as sent to the browser: no password, plus sync status."""
+    public = {k: v for k, v in entry.items() if k != 'password'}
+    public.setdefault('type', 'ics')
+    public.setdefault('enabled', True)
+    if not public.get('color'):
+        public['color'] = DEFAULT_COLORS[index % len(DEFAULT_COLORS)]
+    password = entry.get('password') or ''
+    public['has_password'] = bool(password)
+    # ${VAR} references aren't secrets; show them so the user knows what's wired up
+    public['password_ref'] = password if password.startswith('${') else None
+    public['status'] = status_by_id.get(entry.get('id'))
+    return public
+
+def _validate_calendar_payload(data, existing=None):
+    """Merge a request body over an existing entry and validate. Returns (entry, error)."""
+    entry = dict(existing or {})
+    for key in CALENDAR_FIELDS:
+        if key in data:
+            entry[key] = data[key]
+
+    entry['name'] = str(entry.get('name') or '').strip()
+    entry['type'] = str(entry.get('type') or 'ics').strip().lower()
+    entry['url'] = str(entry.get('url') or '').strip()
+    if entry['type'] in ('ical', 'webcal'):
+        entry['type'] = 'ics'
+    if not entry['name']:
+        return None, 'Name is required'
+    if entry['type'] not in ('ics', 'caldav'):
+        return None, "Type must be 'ics' or 'caldav'"
+    if not entry['url']:
+        return None, 'URL is required'
+    if not re.match(r'^(https?|webcal)://', entry['url'], re.I):
+        return None, 'URL must start with http://, https:// or webcal://'
+
+    # Blank password in an edit means "keep the existing one"
+    if not entry.get('password') and existing and existing.get('password'):
+        entry['password'] = existing['password']
+    for key in ('username', 'password'):
+        if key in entry and not entry[key]:
+            del entry[key]
+
+    cals = entry.get('calendars')
+    if isinstance(cals, str):
+        cals = [c.strip() for c in cals.split(',')]
+    if cals is not None:
+        cals = [str(c).strip() for c in cals if str(c).strip()]
+        if cals and entry['type'] == 'caldav':
+            entry['calendars'] = cals
+        else:
+            entry.pop('calendars', None)
+
+    color = str(entry.get('color') or '').strip()
+    if color and not re.match(r'^#[0-9a-fA-F]{6}$', color):
+        return None, 'Color must be a hex value like #4f8ef7'
+    if color:
+        entry['color'] = color
+    else:
+        entry.pop('color', None)
+
+    entry['enabled'] = bool(entry.get('enabled', True))
+    return entry, None
+
+def _apply_calendar_config(entries):
+    write_raw_config(calendar_sync.config_path, entries)
+    calendar_sync.reload()
+    calendar_sync.refresh_async()
+
+@app.route('/api/calendar/calendars', methods=['GET'])
+def list_calendars():
+    """All configured calendars (passwords omitted) with their last-sync status."""
+    status_by_id = {c['id']: c for c in calendar_sync.status()['calendars']}
+    entries = read_raw_config(calendar_sync.config_path)
+    return jsonify([_public_calendar(e, i, status_by_id) for i, e in enumerate(entries)])
+
+@app.route('/api/calendar/calendars', methods=['POST'])
+def add_calendar():
+    data = request.get_json(silent=True) or {}
+    entry, error = _validate_calendar_payload(data)
+    if error:
+        return jsonify({'error': error}), 400
+    entries = read_raw_config(calendar_sync.config_path)
+    entry['id'] = _unique_calendar_id(entry['name'], {e.get('id') for e in entries})
+    entries.append(entry)
+    _apply_calendar_config(entries)
+    return jsonify(_public_calendar(entry, len(entries) - 1, {})), 201
+
+@app.route('/api/calendar/calendars/<cal_id>', methods=['PUT', 'DELETE'])
+def calendar_detail(cal_id):
+    entries = read_raw_config(calendar_sync.config_path)
+    index = next((i for i, e in enumerate(entries) if e.get('id') == cal_id), None)
+    if index is None:
+        return jsonify({'error': 'Calendar not found'}), 404
+
+    if request.method == 'DELETE':
+        entries.pop(index)
+        _apply_calendar_config(entries)
+        return jsonify({'message': 'Calendar deleted'})
+
+    data = request.get_json(silent=True) or {}
+    entry, error = _validate_calendar_payload(data, existing=entries[index])
+    if error:
+        return jsonify({'error': error}), 400
+    entry['id'] = cal_id
+    entries[index] = entry
+    _apply_calendar_config(entries)
+    return jsonify(_public_calendar(entry, index, {}))
+
+@app.route('/api/calendar/test', methods=['POST'])
+def calendar_test():
+    """
+    Fetch a calendar right now without saving it. Body is the same shape as
+    POST /api/calendar/calendars; include "id" to reuse the stored password
+    of an existing calendar when the password field is left blank.
+    """
+    data = dict(request.get_json(silent=True) or {})
+    if not str(data.get('name') or '').strip():
+        data['name'] = 'Test'  # a name isn't needed just to check connectivity
+    existing = None
+    if data.get('id'):
+        existing = next((e for e in read_raw_config(calendar_sync.config_path)
+                         if e.get('id') == data['id']), None)
+    entry, error = _validate_calendar_payload(data, existing=existing)
+    if error:
+        return jsonify({'ok': False, 'error': error}), 400
+    entry.setdefault('id', 'test')
+    return jsonify(test_calendar(entry, calendar_sync.tz))
 
 @app.route('/api/weather', methods=['GET'])
 def weather():

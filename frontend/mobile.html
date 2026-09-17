@@ -409,6 +409,182 @@
         .ingredient-item button {
             flex-shrink: 0;
         }
+
+        /* Calendars tab */
+        .cal-dot {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            box-shadow: 0 0 0 2px rgba(0,0,0,0.06);
+        }
+
+        .item-disabled .item-content {
+            opacity: 0.55;
+        }
+
+        .calendar-row {
+            gap: 10px;
+        }
+
+        .calendar-row .item-actions {
+            gap: 4px;
+        }
+
+        .calendar-row .btn-icon {
+            width: 34px;
+            height: 34px;
+            font-size: 0.85em;
+        }
+
+        .calendar-row .tag {
+            font-size: 0.7em;
+            vertical-align: middle;
+        }
+
+        .item-url {
+            word-break: break-all;
+            font-size: 0.8em;
+            opacity: 0.8;
+        }
+
+        .status-ok { color: #1f9d55; }
+        .status-error { color: #d0342c; }
+        .status-off, .status-pending { color: #86868b; }
+
+        .sync-summary {
+            font-size: 0.85em;
+            color: #86868b;
+            margin: -5px 0 15px;
+        }
+
+        .form-hint {
+            font-size: 0.85em;
+            color: #86868b;
+            margin-top: 6px;
+        }
+
+        .toggle-label {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 500;
+        }
+
+        .toggle-label input {
+            width: 20px;
+            height: 20px;
+            accent-color: #667eea;
+        }
+
+        .color-row {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .swatches {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            flex: 1;
+        }
+
+        .swatch {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            border: 3px solid transparent;
+            cursor: pointer;
+            padding: 0;
+        }
+
+        .swatch.selected {
+            border-color: #1d1d1f;
+        }
+
+        #calendar-color {
+            width: 44px;
+            height: 36px;
+            border: 2px solid #e5e5e7;
+            border-radius: 10px;
+            padding: 2px;
+            background: white;
+        }
+
+        .checkbox-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px 12px;
+            margin-bottom: 8px;
+        }
+
+        .checkbox-grid .form-hint {
+            grid-column: 1 / -1;
+            margin: 0;
+        }
+
+        .check-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.95em;
+        }
+
+        .check-item input {
+            width: 18px;
+            height: 18px;
+            accent-color: #667eea;
+        }
+
+        .test-result {
+            font-size: 0.9em;
+            border-radius: 10px;
+            padding: 0;
+            min-height: 0;
+        }
+
+        .test-result:not(:empty) {
+            padding: 12px 14px;
+            background: #f5f5f7;
+        }
+
+        .test-result.ok {
+            background: #eaf7ee;
+            color: #1f6b3a;
+        }
+
+        .test-result.error {
+            background: #fdecea;
+            color: #a12b23;
+        }
+
+        .test-result ul {
+            margin: 8px 0 0 18px;
+        }
+
+        .help-card .card-title {
+            font-size: 1.05em;
+            margin-bottom: 10px;
+        }
+
+        .help-list {
+            padding-left: 18px;
+            font-size: 0.9em;
+            color: #515154;
+            line-height: 1.5;
+        }
+
+        .help-list li { margin-bottom: 8px; }
+
+        .help-list code {
+            background: #f0f0f2;
+            padding: 1px 6px;
+            border-radius: 5px;
+            font-size: 0.9em;
+        }
+
+        .help-list a { color: #667eea; }
     </style>
 </head>
 <body>
@@ -419,6 +595,7 @@
             <button class="tab" onclick="switchTab('meals')">🍽️ Meals</button>
             <button class="tab" onclick="switchTab('grocery')">🛒 Grocery</button>
             <button class="tab" onclick="switchTab('pantry')">🏪 Pantry</button>
+            <button class="tab" onclick="switchTab('calendars')">📅 Calendars</button>
         </div>
     </div>
 
@@ -470,6 +647,29 @@
                 <div id="pantry-list" class="loading">
                     <div class="spinner"></div>
                 </div>
+            </div>
+        </div>
+
+        <!-- CALENDARS TAB -->
+        <div id="calendars-tab" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Calendars</h2>
+                    <button class="btn btn-secondary btn-small" id="sync-now-btn" onclick="syncCalendarsNow()">Sync now</button>
+                </div>
+                <div id="calendar-sync-summary" class="sync-summary"></div>
+                <div id="calendars-list" class="loading">
+                    <div class="spinner"></div>
+                </div>
+            </div>
+            <div class="card help-card">
+                <h2 class="card-title">Where do I find my feed URL?</h2>
+                <ul class="help-list">
+                    <li><strong>Google Calendar</strong> — Settings → choose calendar → <em>Integrate calendar</em> → <em>Secret address in iCal format</em>. Type: <code>ICS</code>.</li>
+                    <li><strong>iCloud</strong> — Type <code>CalDAV</code>, URL <code>https://caldav.icloud.com</code>, your Apple ID and an <a href="https://support.apple.com/en-us/102654" target="_blank" rel="noopener">app-specific password</a>.</li>
+                    <li><strong>Outlook / Office 365</strong> — Settings → Calendar → <em>Shared calendars</em> → Publish → copy the <em>ICS</em> link.</li>
+                    <li>Any <code>webcal://</code> subscribe link works as <code>ICS</code>.</li>
+                </ul>
             </div>
         </div>
     </div>
@@ -610,6 +810,67 @@
         </div>
     </div>
 
+    <!-- Add/Edit Calendar Modal -->
+    <div id="calendar-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header" id="calendar-modal-title">Add Calendar</div>
+            <form id="calendar-form" onsubmit="saveCalendar(event)">
+                <input type="hidden" id="calendar-id">
+                <div class="form-group">
+                    <label class="form-label">Name*</label>
+                    <input type="text" class="form-input" id="calendar-name" placeholder="e.g., Family, School, Work" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Type</label>
+                    <select class="form-select" id="calendar-type" onchange="updateCalendarTypeFields()">
+                        <option value="ics">ICS / webcal feed (Google, Outlook, subscribe links)</option>
+                        <option value="caldav">CalDAV account (iCloud, Nextcloud, Fastmail)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">URL*</label>
+                    <input type="url" class="form-input" id="calendar-url" placeholder="https://..." required>
+                    <div class="form-hint" id="calendar-url-hint"></div>
+                </div>
+                <div id="calendar-auth-fields">
+                    <div class="form-group">
+                        <label class="form-label">Username</label>
+                        <input type="text" class="form-input" id="calendar-username" autocomplete="off" autocapitalize="off">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Password</label>
+                        <input type="password" class="form-input" id="calendar-password" autocomplete="new-password">
+                        <div class="form-hint" id="calendar-password-hint"></div>
+                    </div>
+                    <div class="form-group" id="calendar-subcalendars-group">
+                        <label class="form-label">Calendars to include</label>
+                        <div id="calendar-subcalendars-picker" class="checkbox-grid"></div>
+                        <input type="text" class="form-input" id="calendar-subcalendars" placeholder="Leave blank for all, or: Home, Kids">
+                        <div class="form-hint">Press <strong>Test</strong> to load the account's calendar list.</div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Color</label>
+                    <div class="color-row">
+                        <div id="calendar-swatches" class="swatches"></div>
+                        <input type="color" id="calendar-color" value="#4f8ef7" title="Custom color">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="toggle-label">
+                        <input type="checkbox" id="calendar-enabled" checked> Show on dashboard
+                    </label>
+                </div>
+                <div id="calendar-test-result" class="test-result"></div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('calendar-modal')">Cancel</button>
+                    <button type="button" class="btn btn-secondary" id="calendar-test-btn" onclick="testCalendar()">Test</button>
+                    <button type="submit" class="btn btn-primary" id="calendar-save-btn">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script>
         const API_BASE = window.location.origin + '/api';
         let currentTab = 'recipes';
@@ -644,6 +905,9 @@
                 case 'pantry':
                     loadPantry();
                     break;
+                case 'calendars':
+                    loadCalendars();
+                    break;
             }
         }
 
@@ -657,6 +921,7 @@
                 const recipes = await response.json();
                 
                 const container = document.getElementById('recipes-list');
+                container.classList.remove('loading');
                 
                 if (recipes.length === 0) {
                     container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📖</div><p>No recipes yet. Add your first recipe!</p></div>';
@@ -820,6 +1085,7 @@
                 const items = await response.json();
                 
                 const container = document.getElementById('grocery-list');
+                container.classList.remove('loading');
                 
                 if (items.length === 0) {
                     container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🛒</div><p>Grocery list is empty</p></div>';
@@ -931,6 +1197,7 @@
                 const items = await response.json();
                 
                 const container = document.getElementById('pantry-list');
+                container.classList.remove('loading');
                 
                 if (items.length === 0) {
                     container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">🏪</div><p>Pantry is empty</p></div>';
@@ -1048,6 +1315,297 @@
         }
 
         // =============================================
+        // CALENDARS
+        // =============================================
+
+        const CALENDAR_COLORS = ['#4f8ef7', '#f5a623', '#7ed321', '#e0685c', '#bd10e0', '#50e3c2', '#f8e71c', '#9b9b9b'];
+        let calendarsCache = [];
+
+        function esc(text) {
+            return String(text ?? '').replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            })[c]);
+        }
+
+        function timeAgo(iso) {
+            if (!iso) return '';
+            const secs = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+            if (secs < 60) return 'just now';
+            if (secs < 3600) return `${Math.round(secs / 60)} min ago`;
+            if (secs < 86400) return `${Math.round(secs / 3600)} hr ago`;
+            return new Date(iso).toLocaleDateString();
+        }
+
+        function calendarStatusLine(cal) {
+            if (!cal.enabled) return '<span class="status status-off">○ Hidden from dashboard</span>';
+            const s = cal.status;
+            if (!s || s.ok === null || s.ok === undefined) return '<span class="status status-pending">⏳ Waiting for first sync…</span>';
+            if (s.ok) {
+                const n = s.count;
+                return `<span class="status status-ok">✓ ${n} event${n === 1 ? '' : 's'}${s.stale ? ' (stale)' : ''} · synced ${timeAgo(s.fetched_at)}</span>`;
+            }
+            return `<span class="status status-error">⚠️ ${esc(s.error || 'Sync failed')}</span>`;
+        }
+
+        async function loadCalendars() {
+            const container = document.getElementById('calendars-list');
+            container.classList.remove('loading');
+            try {
+                const [calsRes, statusRes] = await Promise.all([
+                    fetch(`${API_BASE}/calendar/calendars`),
+                    fetch(`${API_BASE}/calendar/status`),
+                ]);
+                calendarsCache = await calsRes.json();
+                const status = await statusRes.json();
+
+                const summary = document.getElementById('calendar-sync-summary');
+                summary.textContent = status.last_refresh
+                    ? `Last sync ${timeAgo(status.last_refresh)} · refreshes every ${Math.round(status.refresh_interval / 60)} min · ${status.timezone}`
+                    : 'Not synced yet';
+
+                if (calendarsCache.length === 0) {
+                    container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📅</div><p>No calendars yet.<br>Tap <strong>+</strong> to add your first feed.</p></div>';
+                    return;
+                }
+
+                container.innerHTML = `
+                    <ul class="item-list">
+                        ${calendarsCache.map(cal => `
+                            <li class="item calendar-row ${cal.enabled ? '' : 'item-disabled'}">
+                                <span class="cal-dot" style="background:${esc(cal.color)}"></span>
+                                <div class="item-content">
+                                    <div class="item-title">${esc(cal.name)} <span class="tag">${cal.type === 'caldav' ? 'CalDAV' : 'ICS'}</span></div>
+                                    <div class="item-meta">${calendarStatusLine(cal)}</div>
+                                    <div class="item-meta item-url">${esc(cal.type === 'caldav' ? (cal.username ? cal.username + ' @ ' : '') + cal.url : cal.url)}</div>
+                                    ${cal.calendars && cal.calendars.length ? `<div class="item-meta">Includes: ${esc(cal.calendars.join(', '))}</div>` : ''}
+                                </div>
+                                <div class="item-actions">
+                                    <button class="btn btn-secondary btn-icon" title="${cal.enabled ? 'Hide' : 'Show'}" onclick="toggleCalendar('${esc(cal.id)}', ${cal.enabled ? 'false' : 'true'})">${cal.enabled ? '👁️' : '🚫'}</button>
+                                    <button class="btn btn-secondary btn-icon" title="Edit" onclick="openCalendarModal('${esc(cal.id)}')">✏️</button>
+                                    <button class="btn btn-danger btn-icon" title="Delete" onclick="deleteCalendar('${esc(cal.id)}')">🗑️</button>
+                                </div>
+                            </li>
+                        `).join('')}
+                    </ul>
+                `;
+            } catch (error) {
+                console.error('Error loading calendars:', error);
+                container.innerHTML = '<div class="empty-state"><p>Unable to load calendars</p></div>';
+            }
+        }
+
+        async function syncCalendarsNow() {
+            const btn = document.getElementById('sync-now-btn');
+            btn.disabled = true;
+            btn.textContent = 'Syncing…';
+            try {
+                await fetch(`${API_BASE}/calendar/refresh`, { method: 'POST' });
+            } catch (error) {
+                console.error('Error syncing:', error);
+            }
+            btn.disabled = false;
+            btn.textContent = 'Sync now';
+            loadCalendars();
+        }
+
+        async function toggleCalendar(id, enabled) {
+            try {
+                await fetch(`${API_BASE}/calendar/calendars/${encodeURIComponent(id)}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled }),
+                });
+                loadCalendars();
+                setTimeout(loadCalendars, 2500);  // pick up the background re-sync
+            } catch (error) {
+                console.error('Error updating calendar:', error);
+            }
+        }
+
+        async function deleteCalendar(id) {
+            const cal = calendarsCache.find(c => c.id === id);
+            if (!confirm(`Remove "${cal ? cal.name : id}" from the dashboard?`)) return;
+            try {
+                await fetch(`${API_BASE}/calendar/calendars/${encodeURIComponent(id)}`, { method: 'DELETE' });
+                loadCalendars();
+            } catch (error) {
+                console.error('Error deleting calendar:', error);
+            }
+        }
+
+        function renderSwatches(selected) {
+            const box = document.getElementById('calendar-swatches');
+            box.innerHTML = CALENDAR_COLORS.map(c => `
+                <button type="button" class="swatch ${c.toLowerCase() === (selected || '').toLowerCase() ? 'selected' : ''}"
+                        style="background:${c}" data-color="${c}" onclick="pickColor('${c}')" aria-label="${c}"></button>
+            `).join('');
+        }
+
+        function pickColor(color) {
+            document.getElementById('calendar-color').value = color;
+            renderSwatches(color);
+        }
+
+        function updateCalendarTypeFields() {
+            const type = document.getElementById('calendar-type').value;
+            const isCaldav = type === 'caldav';
+            document.getElementById('calendar-auth-fields').style.display = isCaldav ? '' : 'none';
+            document.getElementById('calendar-url-hint').textContent = isCaldav
+                ? 'Server address, e.g. https://caldav.icloud.com'
+                : 'Paste the .ics / webcal:// link. Google calls this the "Secret address in iCal format".';
+            const url = document.getElementById('calendar-url');
+            if (isCaldav && !url.value) url.value = 'https://caldav.icloud.com';
+            if (!isCaldav && url.value === 'https://caldav.icloud.com') url.value = '';
+        }
+
+        function renderSubcalendarPicker(available, selected) {
+            const picker = document.getElementById('calendar-subcalendars-picker');
+            const text = document.getElementById('calendar-subcalendars');
+            if (!available || !available.length) {
+                picker.innerHTML = '';
+                text.style.display = '';
+                return;
+            }
+            const chosen = new Set((selected || []).map(s => s.toLowerCase()));
+            picker.innerHTML = available.map(name => `
+                <label class="check-item">
+                    <input type="checkbox" value="${esc(name)}" ${chosen.has(name.toLowerCase()) ? 'checked' : ''}
+                           onchange="syncSubcalendarText()"> ${esc(name)}
+                </label>
+            `).join('') + '<div class="form-hint">Nothing checked = show all calendars</div>';
+            text.style.display = 'none';
+        }
+
+        function syncSubcalendarText() {
+            const checked = [...document.querySelectorAll('#calendar-subcalendars-picker input:checked')].map(i => i.value);
+            document.getElementById('calendar-subcalendars').value = checked.join(', ');
+        }
+
+        function openCalendarModal(id = null) {
+            const cal = id ? calendarsCache.find(c => c.id === id) : null;
+            document.getElementById('calendar-form').reset();
+            document.getElementById('calendar-test-result').innerHTML = '';
+            document.getElementById('calendar-test-result').className = 'test-result';
+            document.getElementById('calendar-modal-title').textContent = cal ? 'Edit Calendar' : 'Add Calendar';
+            document.getElementById('calendar-id').value = cal ? cal.id : '';
+            document.getElementById('calendar-name').value = cal ? cal.name : '';
+            document.getElementById('calendar-type').value = cal ? cal.type : 'ics';
+            document.getElementById('calendar-url').value = cal ? cal.url : '';
+            document.getElementById('calendar-username').value = cal ? (cal.username || '') : '';
+            document.getElementById('calendar-password').value = '';
+            document.getElementById('calendar-password-hint').textContent = cal && cal.has_password
+                ? (cal.password_ref ? `Currently using ${cal.password_ref} from config.env — leave blank to keep` : 'Saved — leave blank to keep the current password')
+                : 'For iCloud use an app-specific password, not your Apple ID password';
+            document.getElementById('calendar-subcalendars').value = cal && cal.calendars ? cal.calendars.join(', ') : '';
+            renderSubcalendarPicker(null, null);
+            document.getElementById('calendar-enabled').checked = cal ? cal.enabled !== false : true;
+            const color = cal ? cal.color : CALENDAR_COLORS[calendarsCache.length % CALENDAR_COLORS.length];
+            document.getElementById('calendar-color').value = color;
+            renderSwatches(color);
+            updateCalendarTypeFields();
+            openModal('calendar-modal');
+        }
+
+        function calendarFormData() {
+            const type = document.getElementById('calendar-type').value;
+            const data = {
+                name: document.getElementById('calendar-name').value.trim(),
+                type,
+                url: document.getElementById('calendar-url').value.trim(),
+                color: document.getElementById('calendar-color').value,
+                enabled: document.getElementById('calendar-enabled').checked,
+            };
+            if (type === 'caldav') {
+                data.username = document.getElementById('calendar-username').value.trim();
+                const pw = document.getElementById('calendar-password').value;
+                if (pw) data.password = pw;
+                data.calendars = document.getElementById('calendar-subcalendars').value;
+            }
+            const id = document.getElementById('calendar-id').value;
+            if (id) data.id = id;
+            return data;
+        }
+
+        async function testCalendar() {
+            const btn = document.getElementById('calendar-test-btn');
+            const box = document.getElementById('calendar-test-result');
+            const data = calendarFormData();
+            if (!data.url) {
+                box.className = 'test-result error';
+                box.textContent = 'Enter a URL first';
+                return;
+            }
+            btn.disabled = true;
+            btn.textContent = 'Testing…';
+            box.className = 'test-result';
+            box.textContent = 'Connecting…';
+            try {
+                const res = await fetch(`${API_BASE}/calendar/test`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data),
+                });
+                const result = await res.json();
+                if (result.ok) {
+                    box.className = 'test-result ok';
+                    let html = `<strong>✓ Connected</strong> — ${result.count} event${result.count === 1 ? '' : 's'} in the next 7 days`;
+                    if (result.sample && result.sample.length) {
+                        html += '<ul>' + result.sample.map(ev => {
+                            const d = new Date(ev.start);
+                            const when = ev.all_day
+                                ? d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+                                : d.toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+                            return `<li>${esc(when)} — ${esc(ev.title)}</li>`;
+                        }).join('') + '</ul>';
+                    }
+                    box.innerHTML = html;
+                    if (result.available_calendars) {
+                        const selected = document.getElementById('calendar-subcalendars').value.split(',').map(s => s.trim()).filter(Boolean);
+                        renderSubcalendarPicker(result.available_calendars, selected);
+                    }
+                } else {
+                    box.className = 'test-result error';
+                    box.innerHTML = `<strong>✗ Failed</strong> — ${esc(result.error || 'Unknown error')}`;
+                }
+            } catch (error) {
+                box.className = 'test-result error';
+                box.textContent = 'Could not reach the dashboard server';
+            }
+            btn.disabled = false;
+            btn.textContent = 'Test';
+        }
+
+        async function saveCalendar(event) {
+            event.preventDefault();
+            const data = calendarFormData();
+            const id = data.id;
+            delete data.id;
+            const btn = document.getElementById('calendar-save-btn');
+            btn.disabled = true;
+            try {
+                const res = await fetch(id ? `${API_BASE}/calendar/calendars/${encodeURIComponent(id)}` : `${API_BASE}/calendar/calendars`, {
+                    method: id ? 'PUT' : 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data),
+                });
+                const body = await res.json();
+                if (!res.ok) {
+                    const box = document.getElementById('calendar-test-result');
+                    box.className = 'test-result error';
+                    box.textContent = body.error || 'Could not save';
+                    return;
+                }
+                closeModal('calendar-modal');
+                loadCalendars();
+                setTimeout(loadCalendars, 3000);  // background sync should have finished
+            } catch (error) {
+                console.error('Error saving calendar:', error);
+            } finally {
+                btn.disabled = false;
+            }
+        }
+
+        // =============================================
         // MODALS
         // =============================================
 
@@ -1061,6 +1619,9 @@
                     break;
                 case 'pantry':
                     openModal('pantry-modal');
+                    break;
+                case 'calendars':
+                    openCalendarModal();
                     break;
             }
         }

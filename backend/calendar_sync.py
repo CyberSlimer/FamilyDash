@@ -68,6 +68,39 @@ def _expand_env(value):
     return value
 
 
+def read_raw_config(path):
+    """Return the calendar entries exactly as stored in calendars.json (no env expansion)."""
+    if not path or not os.path.exists(path):
+        return []
+    with open(path, 'r', encoding='utf-8') as fh:
+        raw = json.load(fh)
+    entries = raw.get('calendars', raw) if isinstance(raw, dict) else raw
+    return [dict(e) for e in entries if isinstance(e, dict)]
+
+
+def write_raw_config(path, entries):
+    """Atomically write calendar entries to calendars.json."""
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+    tmp = f'{path}.tmp'
+    with open(tmp, 'w', encoding='utf-8') as fh:
+        json.dump({'calendars': entries}, fh, indent=2)
+        fh.write('\n')
+    os.replace(tmp, path)
+
+
+def prepare_calendar(entry, index=0):
+    """Expand ${ENV} references and fill in defaults for one calendar entry."""
+    cal = _expand_env(dict(entry))
+    cal.setdefault('id', f'calendar-{index + 1}')
+    cal.setdefault('name', cal['id'].replace('-', ' ').title())
+    cal['type'] = str(cal.get('type', 'ics')).lower()
+    if cal['type'] in ('ical', 'webcal'):
+        cal['type'] = 'ics'
+    if not cal.get('color'):
+        cal['color'] = DEFAULT_COLORS[index % len(DEFAULT_COLORS)]
+    return cal
+
+
 def load_calendar_config(path):
     """
     Load calendar definitions. Returns a list of dicts with at least
@@ -78,12 +111,9 @@ def load_calendar_config(path):
     calendars = []
 
     if path and os.path.exists(path):
-        with open(path, 'r', encoding='utf-8') as fh:
-            raw = json.load(fh)
-        entries = raw.get('calendars', raw) if isinstance(raw, dict) else raw
-        for entry in entries:
+        for entry in read_raw_config(path):
             if entry.get('enabled', True):
-                calendars.append(_expand_env(entry))
+                calendars.append(entry)
     else:
         # Legacy single-calendar config from config.env
         cal_type = os.environ.get('CALENDAR_TYPE', 'local').lower()
@@ -100,16 +130,7 @@ def load_calendar_config(path):
                 'url': os.environ['ICAL_URL'],
             })
 
-    # Fill in defaults
-    for i, cal in enumerate(calendars):
-        cal.setdefault('id', f'calendar-{i + 1}')
-        cal.setdefault('name', cal['id'].replace('-', ' ').title())
-        cal['type'] = cal.get('type', 'ics').lower()
-        if cal['type'] in ('ical', 'webcal'):
-            cal['type'] = 'ics'
-        cal.setdefault('color', DEFAULT_COLORS[i % len(DEFAULT_COLORS)])
-
-    return calendars
+    return [prepare_calendar(cal, i) for i, cal in enumerate(calendars)]
 
 
 def local_timezone():
@@ -297,6 +318,62 @@ FETCHERS = {
 }
 
 
+def list_caldav_calendars(cal_cfg):
+    """Names of every calendar the CalDAV account exposes (for the setup UI)."""
+    if not HAVE_CALDAV:
+        raise RuntimeError("python 'caldav' package is not installed")
+    client = caldav.DAVClient(url=cal_cfg['url'],
+                              username=cal_cfg.get('username'),
+                              password=cal_cfg.get('password'))
+    names = []
+    for calendar in client.principal().calendars():
+        try:
+            name = str(calendar.name or '').strip()
+        except Exception:
+            name = ''
+        if name:
+            names.append(name)
+    return names
+
+
+def test_calendar(cal_cfg, tz=None, days=7, sample_size=5):
+    """
+    Fetch one calendar right now and report what happened. Used by the
+    mobile UI's "Test" button before a calendar is saved.
+    """
+    tz = tz or local_timezone()
+    cal_cfg = prepare_calendar(cal_cfg)
+    result = {'ok': False, 'count': 0, 'sample': [], 'error': None, 'available_calendars': None}
+
+    if not HAVE_ICAL:
+        result['error'] = "icalendar / recurring-ical-events not installed"
+        return result
+    fetcher = FETCHERS.get(cal_cfg['type'])
+    if fetcher is None:
+        result['error'] = f"unknown calendar type '{cal_cfg['type']}'"
+        return result
+    if not cal_cfg.get('url'):
+        result['error'] = 'URL is required'
+        return result
+
+    now = datetime.now(tz)
+    start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    try:
+        events = fetcher(cal_cfg, tz, start, start + timedelta(days=days))
+        events.sort(key=lambda e: e['_start'])
+        result.update(ok=True, count=len(events),
+                      sample=[{k: v for k, v in e.items() if not k.startswith('_')}
+                              for e in events[:sample_size]])
+        if cal_cfg['type'] == 'caldav':
+            try:
+                result['available_calendars'] = list_caldav_calendars(cal_cfg)
+            except Exception as exc:
+                log.debug("could not list CalDAV calendars: %s", exc)
+    except Exception as exc:
+        result['error'] = str(exc)
+    return result
+
+
 # ============================================================================
 # Sync service
 # ============================================================================
@@ -345,6 +422,30 @@ class CalendarSync:
 
     def stop(self):
         self._stop.set()
+
+    def reload(self):
+        """
+        Re-read calendars.json after it was edited. Cached events for
+        calendars that were removed or disabled are dropped immediately;
+        new ones appear on the next refresh().
+        """
+        self.calendars = load_calendar_config(self.config_path)
+        live_ids = {c['id'] for c in self.calendars}
+        with self._lock:
+            self._events = [e for e in self._events if e['calendar'].split(':')[0] in live_ids]
+            self._status = {cid: s for cid, s in self._status.items() if cid in live_ids}
+        if self.enabled:
+            self.start()
+
+    def refresh_async(self):
+        """Kick off a refresh without blocking the caller (e.g. after a config edit)."""
+        threading.Thread(target=self._safe_refresh, name='calendar-refresh', daemon=True).start()
+
+    def _safe_refresh(self):
+        try:
+            self.refresh()
+        except Exception:
+            log.exception("calendar refresh crashed")
 
     def refresh(self):
         """Fetch every calendar now. Safe to call from any thread."""
@@ -424,10 +525,7 @@ class CalendarSync:
 
     def _run(self):
         while not self._stop.is_set():
-            try:
-                self.refresh()
-            except Exception:
-                log.exception("calendar refresh crashed")
+            self._safe_refresh()
             self._stop.wait(self.refresh_interval)
 
     def _coerce(self, value):

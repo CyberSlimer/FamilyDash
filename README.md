@@ -15,6 +15,7 @@ A complete family command center running on Raspberry Pi 4 with a 27" landscape 
 - **Meal Planning** - Plan meals for the week
 - **Grocery Lists** - Manage shopping lists, auto-generate from meals
 - **Pantry Tracking** - Track inventory and expiration dates
+- **Calendar Setup** - Add Google/iCloud/Outlook feeds, test them, pick colors
 
 ### Hardware Controls
 - **Physical Button** - Advance to next screen
@@ -246,7 +247,14 @@ Two source types are supported:
 | `ics` | Google Calendar (secret iCal address), Outlook/Office 365 published calendars, school & sports calendars, any `webcal://` link | The feed URL |
 | `caldav` | iCloud, Nextcloud, Fastmail, Synology, any CalDAV server | Server URL + username + password |
 
-Calendars are defined in **`config/calendars.json`** (this file is git-ignored so your URLs and passwords never get committed):
+**Easiest: use the mobile interface.** Open `http://<raspberry-pi-ip>:5000/mobile`, go to the
+**📅 Calendars** tab and tap **+**. Paste the feed URL (or CalDAV server + login), hit **Test**
+to preview the next week's events — for CalDAV accounts this also lists the account's calendars
+so you can tick the ones you want — pick a color and **Save**. The dashboard re-syncs immediately;
+each calendar shows its live sync status, and you can hide/show, edit or remove it from the same tab.
+
+Under the hood this edits **`config/calendars.json`** (git-ignored so your URLs and passwords never
+get committed). You can also edit it by hand:
 
 ```bash
 cp config/calendars.example.json config/calendars.json
@@ -371,6 +379,11 @@ vcgencmd display_power 1  # On
 - `GET /api/calendar/events?start_date=&end_date=` - Events overlapping the range (ISO dates; defaults to today)
 - `GET /api/calendar/status` - Configured calendars and last-sync health
 - `POST /api/calendar/refresh` - Force an immediate re-sync
+- `GET /api/calendar/calendars` - Configured calendars (passwords omitted) with sync status
+- `POST /api/calendar/calendars` - Add a calendar `{name, type, url, username?, password?, calendars?, color?, enabled?}`
+- `PUT /api/calendar/calendars/<id>` - Update a calendar (blank password keeps the stored one)
+- `DELETE /api/calendar/calendars/<id>` - Remove a calendar
+- `POST /api/calendar/test` - Fetch a calendar without saving; returns `{ok, count, sample, error, available_calendars}`
 
 ## 🔄 Maintenance
 
