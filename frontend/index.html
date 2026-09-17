@@ -1,0 +1,1093 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Family Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            overflow: hidden;
+            cursor: none; /* Hide cursor in kiosk mode */
+        }
+
+        .screen {
+            display: none;
+            width: 100vw;
+            height: 100vh;
+            padding: 40px;
+            animation: fadeIn 0.5s ease-in;
+        }
+
+        .screen.active {
+            display: flex;
+            flex-direction: column;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.3);
+        }
+
+        .header h1 {
+            font-size: 3em;
+            font-weight: 300;
+        }
+
+        .datetime {
+            text-align: right;
+        }
+
+        .time {
+            font-size: 4em;
+            font-weight: 200;
+            line-height: 1;
+        }
+
+        .date {
+            font-size: 1.5em;
+            opacity: 0.9;
+            margin-top: 5px;
+        }
+
+        .content {
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        /* Screen indicators */
+        .screen-indicator {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            display: flex;
+            gap: 10px;
+        }
+
+        .indicator-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.3);
+            transition: all 0.3s;
+        }
+
+        .indicator-dot.active {
+            background: white;
+            transform: scale(1.3);
+        }
+
+        /* ============================================ */
+        /* SCREEN 1: CALENDAR & WEATHER */
+        /* ============================================ */
+
+        .two-column {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            height: 100%;
+            min-height: 0;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        /* Each card scrolls on its own; hide scrollbars on the kiosk display */
+        .two-column .card {
+            overflow-y: auto;
+            min-height: 0;
+            scrollbar-width: none;
+        }
+
+        .two-column .card::-webkit-scrollbar,
+        .content::-webkit-scrollbar {
+            display: none;
+        }
+
+        .content {
+            scrollbar-width: none;
+        }
+
+        .card h2 {
+            font-size: 2.5em;
+            margin-bottom: 25px;
+            font-weight: 300;
+        }
+
+        .event {
+            background: rgba(255, 255, 255, 0.15);
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 15px;
+            border-left: 4px solid #fff;
+        }
+
+        .event-time {
+            font-size: 1.3em;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .event-title {
+            font-size: 1.8em;
+            margin-bottom: 5px;
+        }
+
+        .event-location {
+            font-size: 1.2em;
+            opacity: 0.8;
+        }
+
+        .event-meta {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            flex-wrap: wrap;
+            font-size: 1.1em;
+            opacity: 0.8;
+        }
+
+        .event-calendar {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.85em;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .cal-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        .event-past {
+            opacity: 0.45;
+        }
+
+        .event-now {
+            background: rgba(255, 255, 255, 0.28);
+            box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35);
+        }
+
+        .event-now-badge {
+            background: #fff;
+            color: #764ba2;
+            font-size: 0.7em;
+            padding: 2px 8px;
+            border-radius: 10px;
+            margin-left: 8px;
+            vertical-align: middle;
+        }
+
+        .event-compact {
+            padding: 12px 16px;
+            margin-bottom: 8px;
+            display: grid;
+            grid-template-columns: 160px 1fr auto;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .event-compact .event-time { font-size: 1.05em; margin: 0; font-weight: 500; }
+        .event-compact .event-title { font-size: 1.3em; margin: 0; }
+        .event-compact .event-meta { font-size: 0.95em; }
+        .event-compact .event-location { display: none; }
+
+        .day-heading {
+            font-size: 1.1em;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            opacity: 0.7;
+            margin: 0 0 12px;
+        }
+
+        .upcoming-heading {
+            margin-top: 28px;
+            padding-top: 18px;
+            border-top: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .day-subheading {
+            font-size: 1.15em;
+            font-weight: 600;
+            margin: 14px 0 8px;
+        }
+
+        .calendar-notice {
+            font-size: 1em;
+            padding: 10px 14px;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.12);
+            margin-bottom: 15px;
+            opacity: 0.9;
+        }
+
+        .calendar-notice code {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 0.9em;
+        }
+
+        .calendar-notice.warn {
+            background: rgba(255, 180, 60, 0.25);
+            border: 1px solid rgba(255, 180, 60, 0.5);
+        }
+
+        .weather-current {
+            display: flex;
+            align-items: center;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+
+        .temp-large {
+            font-size: 6em;
+            font-weight: 200;
+            line-height: 1;
+        }
+
+        .weather-details {
+            font-size: 1.5em;
+            line-height: 1.6;
+        }
+
+        .forecast {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+        }
+
+        .forecast-item {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .forecast-day {
+            font-size: 1.2em;
+            margin-bottom: 10px;
+            font-weight: 600;
+        }
+
+        .forecast-temp {
+            font-size: 2em;
+            font-weight: 300;
+        }
+
+        .forecast-desc {
+            font-size: 1em;
+            opacity: 0.9;
+            margin-top: 5px;
+        }
+
+        .alert {
+            background: rgba(255, 100, 100, 0.3);
+            border: 2px solid rgba(255, 100, 100, 0.6);
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 20px;
+        }
+
+        .alert-title {
+            font-size: 1.5em;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        /* ============================================ */
+        /* SCREEN 2: MEAL PLAN */
+        /* ============================================ */
+
+        .meal-week {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 15px;
+        }
+
+        .meal-day {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            min-height: 300px;
+        }
+
+        .meal-day.today {
+            background: rgba(255, 255, 255, 0.2);
+            border: 2px solid rgba(255, 255, 255, 0.5);
+        }
+
+        .day-name {
+            font-size: 1.5em;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+
+        .day-date {
+            font-size: 1.1em;
+            opacity: 0.8;
+            margin-bottom: 20px;
+        }
+
+        .meal {
+            background: rgba(255, 255, 255, 0.15);
+            padding: 12px;
+            border-radius: 10px;
+            margin-bottom: 10px;
+        }
+
+        .meal-type {
+            font-size: 0.9em;
+            opacity: 0.8;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 5px;
+        }
+
+        .meal-name {
+            font-size: 1.2em;
+            font-weight: 500;
+        }
+
+        /* ============================================ */
+        /* SCREEN 3: GROCERY LIST */
+        /* ============================================ */
+
+        .grocery-columns {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 25px;
+        }
+
+        .grocery-category {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 25px;
+        }
+
+        .category-title {
+            font-size: 1.8em;
+            font-weight: 600;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.3);
+        }
+
+        .grocery-item {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 12px 0;
+            font-size: 1.4em;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .grocery-item:last-child {
+            border-bottom: none;
+        }
+
+        .grocery-checkbox {
+            width: 24px;
+            height: 24px;
+            border: 2px solid white;
+            border-radius: 6px;
+            flex-shrink: 0;
+        }
+
+        .grocery-item.checked .grocery-checkbox {
+            background: white;
+            position: relative;
+        }
+
+        .grocery-item.checked .grocery-checkbox::after {
+            content: '✓';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #667eea;
+            font-weight: bold;
+        }
+
+        .grocery-item.checked .item-text {
+            text-decoration: line-through;
+            opacity: 0.5;
+        }
+
+        .item-text {
+            flex: 1;
+        }
+
+        /* ============================================ */
+        /* SCREEN 4: RECIPES & PANTRY */
+        /* ============================================ */
+
+        .recipe-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .recipe-card {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            overflow: hidden;
+            transition: transform 0.2s;
+        }
+
+        .recipe-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .recipe-image {
+            width: 100%;
+            height: 180px;
+            object-fit: cover;
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .recipe-info {
+            padding: 20px;
+        }
+
+        .recipe-title {
+            font-size: 1.5em;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+
+        .recipe-meta {
+            font-size: 1.1em;
+            opacity: 0.8;
+        }
+
+        .pantry-items {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 15px;
+        }
+
+        .pantry-item {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 10px;
+        }
+
+        .pantry-item.expiring {
+            background: rgba(255, 200, 100, 0.3);
+            border: 2px solid rgba(255, 200, 100, 0.6);
+        }
+
+        .pantry-name {
+            font-size: 1.3em;
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+
+        .pantry-location {
+            font-size: 1em;
+            opacity: 0.8;
+        }
+
+        .no-data {
+            text-align: center;
+            font-size: 1.5em;
+            opacity: 0.6;
+            padding: 60px;
+        }
+
+        /* Loading spinner */
+        .loading {
+            display: inline-block;
+            width: 40px;
+            height: 40px;
+            border: 4px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <!-- Screen 1: Calendar & Weather -->
+    <div class="screen active" id="screen-0">
+        <div class="header">
+            <h1>📅 Today's Schedule</h1>
+            <div class="datetime">
+                <div class="time" id="time-0">--:--</div>
+                <div class="date" id="date-0">Loading...</div>
+            </div>
+        </div>
+        <div class="content two-column">
+            <div class="card">
+                <h2>Events</h2>
+                <div id="calendar-events">
+                    <div class="loading"></div>
+                </div>
+            </div>
+            <div class="card">
+                <h2 id="weather-heading">Weather</h2>
+                <div id="weather-display">
+                    <div class="loading"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Screen 2: Meal Plan -->
+    <div class="screen" id="screen-1">
+        <div class="header">
+            <h1>🍽️ This Week's Meals</h1>
+            <div class="datetime">
+                <div class="time" id="time-1">--:--</div>
+                <div class="date" id="date-1">Loading...</div>
+            </div>
+        </div>
+        <div class="content">
+            <div class="meal-week" id="meal-week">
+                <div class="loading"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Screen 3: Grocery List -->
+    <div class="screen" id="screen-2">
+        <div class="header">
+            <h1>🛒 Grocery List</h1>
+            <div class="datetime">
+                <div class="time" id="time-2">--:--</div>
+                <div class="date" id="date-2">Loading...</div>
+            </div>
+        </div>
+        <div class="content">
+            <div class="grocery-columns" id="grocery-list">
+                <div class="loading"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Screen 4: Recipes & Pantry -->
+    <div class="screen" id="screen-3">
+        <div class="header">
+            <h1>👨‍🍳 Favorite Recipes & Pantry</h1>
+            <div class="datetime">
+                <div class="time" id="time-3">--:--</div>
+                <div class="date" id="date-3">Loading...</div>
+            </div>
+        </div>
+        <div class="content">
+            <div class="recipe-grid" id="recipe-grid">
+                <div class="loading"></div>
+            </div>
+            <div class="card">
+                <h2>Pantry Items Expiring Soon</h2>
+                <div class="pantry-items" id="pantry-items">
+                    <div class="loading"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Screen indicators -->
+    <div class="screen-indicator">
+        <div class="indicator-dot active" data-screen="0"></div>
+        <div class="indicator-dot" data-screen="1"></div>
+        <div class="indicator-dot" data-screen="2"></div>
+        <div class="indicator-dot" data-screen="3"></div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:5000/api';
+        let currentScreen = 0;
+        let rotationInterval;
+        let lastInteraction = Date.now();
+
+        // =============================================
+        // SCREEN ROTATION
+        // =============================================
+
+        function showScreen(screenIndex) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.querySelectorAll('.indicator-dot').forEach(d => d.classList.remove('active'));
+            
+            document.getElementById(`screen-${screenIndex}`).classList.add('active');
+            document.querySelector(`.indicator-dot[data-screen="${screenIndex}"]`).classList.add('active');
+            
+            currentScreen = screenIndex;
+            refreshCurrentScreen();
+        }
+
+        function nextScreen() {
+            currentScreen = (currentScreen + 1) % 4;
+            showScreen(currentScreen);
+        }
+
+        function previousScreen() {
+            currentScreen = (currentScreen - 1 + 4) % 4;
+            showScreen(currentScreen);
+        }
+
+        function startRotation() {
+            stopRotation();
+            rotationInterval = setInterval(() => {
+                // Check if inactive (for motion sensor)
+                const inactiveTime = Date.now() - lastInteraction;
+                if (inactiveTime < 300000) { // 5 minutes
+                    nextScreen();
+                }
+            }, 30000); // 30 seconds
+        }
+
+        function stopRotation() {
+            if (rotationInterval) {
+                clearInterval(rotationInterval);
+            }
+        }
+
+        // =============================================
+        // TIME & DATE
+        // =============================================
+
+        function updateDateTime() {
+            const now = new Date();
+            const timeStr = now.toLocaleTimeString('en-US', { 
+                hour: 'numeric', 
+                minute: '2-digit',
+                hour12: true 
+            });
+            const dateStr = now.toLocaleDateString('en-US', { 
+                weekday: 'long', 
+                month: 'long', 
+                day: 'numeric',
+                year: 'numeric'
+            });
+
+            for (let i = 0; i < 4; i++) {
+                document.getElementById(`time-${i}`).textContent = timeStr;
+                document.getElementById(`date-${i}`).textContent = dateStr;
+            }
+        }
+
+        // =============================================
+        // DATA FETCHING
+        // =============================================
+
+        const UPCOMING_DAYS = 6;  // days after today to preview
+
+        function esc(text) {
+            return String(text ?? '').replace(/[&<>"']/g, c => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            })[c]);
+        }
+
+        function localDateKey(d) {
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        }
+
+        function fmtTime(d) {
+            return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+        }
+
+        function eventTimeLabel(event, dayStart, dayEnd) {
+            if (event.all_day) return 'All day';
+            const start = new Date(event.start);
+            const end = new Date(event.end);
+            if (start < dayStart && end > dayEnd) return 'All day';
+            if (start < dayStart) return `Until ${fmtTime(end)}`;
+            if (end > dayEnd) return `From ${fmtTime(start)}`;
+            return `${fmtTime(start)} – ${fmtTime(end)}`;
+        }
+
+        function renderEvent(event, dayStart, dayEnd, now, compact) {
+            const start = new Date(event.start);
+            const end = new Date(event.end);
+            const past = !event.all_day && end < now;
+            const current = !event.all_day && start <= now && now < end;
+            const cls = ['event', compact ? 'event-compact' : '', past ? 'event-past' : '', current ? 'event-now' : ''].join(' ');
+            return `
+                <div class="${cls}" style="border-left-color: ${esc(event.color || '#fff')}">
+                    <div class="event-time">${eventTimeLabel(event, dayStart, dayEnd)}${current ? ' <span class="event-now-badge">Now</span>' : ''}</div>
+                    <div class="event-title">${esc(event.title)}</div>
+                    <div class="event-meta">
+                        ${event.location ? `<span class="event-location">📍 ${esc(event.location)}</span>` : ''}
+                        <span class="event-calendar"><span class="cal-dot" style="background:${esc(event.color || '#fff')}"></span>${esc(event.calendar_name)}</span>
+                    </div>
+                </div>`;
+        }
+
+        function dayHeading(d, todayKey) {
+            const key = localDateKey(d);
+            const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+            if (key === localDateKey(tomorrow)) return 'Tomorrow';
+            return d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+        }
+
+        async function fetchCalendarEvents() {
+            const container = document.getElementById('calendar-events');
+            try {
+                const now = new Date();
+                const todayStart = new Date(now); todayStart.setHours(0, 0, 0, 0);
+                const rangeEnd = new Date(todayStart); rangeEnd.setDate(rangeEnd.getDate() + UPCOMING_DAYS + 1);
+
+                const [eventsRes, statusRes] = await Promise.all([
+                    fetch(`${API_BASE}/calendar/events?start_date=${encodeURIComponent(todayStart.toISOString())}&end_date=${encodeURIComponent(rangeEnd.toISOString())}`),
+                    fetch(`${API_BASE}/calendar/status`).catch(() => null),
+                ]);
+                const events = await eventsRes.json();
+                const status = statusRes && statusRes.ok ? await statusRes.json() : null;
+
+                // Bucket events into local days (multi-day events land in every day they touch)
+                const days = [];
+                for (let i = 0; i <= UPCOMING_DAYS; i++) {
+                    const start = new Date(todayStart); start.setDate(start.getDate() + i);
+                    const end = new Date(start); end.setDate(end.getDate() + 1);
+                    days.push({ start, end, events: [] });
+                }
+                for (const ev of events) {
+                    const s = new Date(ev.start), e = new Date(ev.end);
+                    for (const day of days) {
+                        if (s < day.end && e > day.start) day.events.push(ev);
+                    }
+                }
+
+                let html = '';
+
+                // Sync problems banner
+                if (status) {
+                    if (!status.enabled) {
+                        html += '<div class="calendar-notice">No calendars configured — copy <code>config/calendars.example.json</code> to <code>calendars.json</code></div>';
+                    } else {
+                        const failed = status.calendars.filter(c => c.ok === false);
+                        if (failed.length) {
+                            html += `<div class="calendar-notice warn">⚠️ Not syncing: ${failed.map(c => esc(c.name)).join(', ')}</div>`;
+                        }
+                    }
+                }
+
+                // Today
+                const today = days[0];
+                html += '<div class="day-heading">Today</div>';
+                if (today.events.length === 0) {
+                    html += '<div class="no-data">Nothing scheduled today</div>';
+                } else {
+                    html += today.events.map(ev => renderEvent(ev, today.start, today.end, now, false)).join('');
+                }
+
+                // Coming up
+                const upcoming = days.slice(1).filter(d => d.events.length > 0);
+                if (upcoming.length) {
+                    html += '<div class="day-heading upcoming-heading">Coming up</div>';
+                    for (const day of upcoming) {
+                        html += `<div class="day-subheading">${dayHeading(day.start)}</div>`;
+                        html += day.events.map(ev => renderEvent(ev, day.start, day.end, now, true)).join('');
+                    }
+                }
+
+                container.innerHTML = html;
+            } catch (error) {
+                console.error('Error fetching calendar:', error);
+                container.innerHTML = '<div class="no-data">Unable to load events</div>';
+            }
+        }
+
+        async function fetchWeather() {
+            try {
+                const response = await fetch(`${API_BASE}/weather`);
+                const data = await response.json();
+                
+                const container = document.getElementById('weather-display');
+                if (data.location) {
+                    document.getElementById('weather-heading').textContent = `Weather - ${data.location}`;
+                }
+                
+                let html = '';
+                
+                // Alerts
+                if (data.alerts && data.alerts.length > 0) {
+                    html += data.alerts.map(alert => `
+                        <div class="alert">
+                            <div class="alert-title">⚠️ ${alert.event}</div>
+                            <div>${alert.headline}</div>
+                        </div>
+                    `).join('');
+                }
+                
+                // Current weather
+                html += `
+                    <div class="weather-current">
+                        <div class="temp-large">${data.current.temperature}°${data.current.temperatureUnit}</div>
+                        <div class="weather-details">
+                            <div>${data.current.shortForecast}</div>
+                            <div>💨 ${data.current.windSpeed} ${data.current.windDirection}</div>
+                        </div>
+                    </div>
+                `;
+                
+                // Forecast
+                if (data.forecast && data.forecast.length > 0) {
+                    html += `
+                        <div class="forecast">
+                            ${data.forecast.map(period => `
+                                <div class="forecast-item">
+                                    <div class="forecast-day">${period.name}</div>
+                                    <div class="forecast-temp">${period.temperature}°</div>
+                                    <div class="forecast-desc">${period.shortForecast}</div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                }
+                
+                container.innerHTML = html;
+            } catch (error) {
+                console.error('Error fetching weather:', error);
+                document.getElementById('weather-display').innerHTML = '<div class="no-data">Unable to load weather</div>';
+            }
+        }
+
+        async function fetchMealPlan() {
+            try {
+                const today = new Date();
+                const startOfWeek = new Date(today);
+                startOfWeek.setDate(today.getDate() - today.getDay()); // Sunday
+                
+                const endOfWeek = new Date(startOfWeek);
+                endOfWeek.setDate(startOfWeek.getDate() + 6); // Saturday
+                
+                const response = await fetch(`${API_BASE}/meals?start_date=${startOfWeek.toISOString()}&end_date=${endOfWeek.toISOString()}`);
+                const meals = await response.json();
+                
+                const container = document.getElementById('meal-week');
+                const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+                
+                let html = '';
+                for (let i = 0; i < 7; i++) {
+                    const date = new Date(startOfWeek);
+                    date.setDate(startOfWeek.getDate() + i);
+                    const dateStr = date.toISOString().split('T')[0];
+                    const isToday = dateStr === today.toISOString().split('T')[0];
+                    
+                    const dayMeals = meals.filter(m => m.date === dateStr);
+                    
+                    html += `
+                        <div class="meal-day ${isToday ? 'today' : ''}">
+                            <div class="day-name">${days[i]}</div>
+                            <div class="day-date">${date.getMonth() + 1}/${date.getDate()}</div>
+                            ${dayMeals.length > 0 ? dayMeals.map(meal => `
+                                <div class="meal">
+                                    <div class="meal-type">${meal.meal_type}</div>
+                                    <div class="meal-name">${meal.recipe_name || 'No meal planned'}</div>
+                                </div>
+                            `).join('') : '<div class="no-data" style="font-size: 0.9em; padding: 10px;">No meals</div>'}
+                        </div>
+                    `;
+                }
+                
+                container.innerHTML = html;
+            } catch (error) {
+                console.error('Error fetching meal plan:', error);
+                document.getElementById('meal-week').innerHTML = '<div class="no-data">Unable to load meal plan</div>';
+            }
+        }
+
+        async function fetchGroceryList() {
+            try {
+                const response = await fetch(`${API_BASE}/grocery`);
+                const items = await response.json();
+                
+                const container = document.getElementById('grocery-list');
+                
+                if (items.length === 0) {
+                    container.innerHTML = '<div class="no-data">Grocery list is empty</div>';
+                    return;
+                }
+                
+                // Group by category
+                const categories = {};
+                items.forEach(item => {
+                    const cat = item.category || 'other';
+                    if (!categories[cat]) categories[cat] = [];
+                    categories[cat].push(item);
+                });
+                
+                const categoryNames = {
+                    produce: '🥬 Produce',
+                    dairy: '🥛 Dairy',
+                    meat: '🥩 Meat',
+                    bakery: '🥖 Bakery',
+                    pantry: '🥫 Pantry',
+                    frozen: '🧊 Frozen',
+                    other: '📦 Other',
+                    generated: '🤖 Generated'
+                };
+                
+                let html = '';
+                for (const [cat, catItems] of Object.entries(categories)) {
+                    html += `
+                        <div class="grocery-category">
+                            <div class="category-title">${categoryNames[cat] || cat}</div>
+                            ${catItems.map(item => `
+                                <div class="grocery-item ${item.checked ? 'checked' : ''}">
+                                    <div class="grocery-checkbox"></div>
+                                    <div class="item-text">
+                                        ${item.name}
+                                        ${item.quantity ? ` (${item.quantity})` : ''}
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                }
+                
+                container.innerHTML = html;
+            } catch (error) {
+                console.error('Error fetching grocery list:', error);
+                document.getElementById('grocery-list').innerHTML = '<div class="no-data">Unable to load grocery list</div>';
+            }
+        }
+
+        async function fetchRecipesAndPantry() {
+            try {
+                // Fetch favorite recipes
+                const recipesResponse = await fetch(`${API_BASE}/recipes?favorite=true`);
+                const recipes = await recipesResponse.json();
+                
+                const recipeContainer = document.getElementById('recipe-grid');
+                
+                if (recipes.length === 0) {
+                    recipeContainer.innerHTML = '<div class="no-data">No favorite recipes yet</div>';
+                } else {
+                    recipeContainer.innerHTML = recipes.slice(0, 6).map(recipe => `
+                        <div class="recipe-card">
+                            ${recipe.image_url ? `<img src="${recipe.image_url}" alt="${recipe.name}" class="recipe-image">` : '<div class="recipe-image"></div>'}
+                            <div class="recipe-info">
+                                <div class="recipe-title">${recipe.name}</div>
+                                <div class="recipe-meta">
+                                    ${recipe.prep_time ? `⏱️ ${recipe.prep_time + (recipe.cook_time || 0)} min` : ''}
+                                    ${recipe.servings ? `👥 ${recipe.servings} servings` : ''}
+                                </div>
+                            </div>
+                        </div>
+                    `).join('');
+                }
+                
+                // Fetch expiring pantry items
+                const pantryResponse = await fetch(`${API_BASE}/pantry?expiring_soon=true`);
+                const pantryItems = await pantryResponse.json();
+                
+                const pantryContainer = document.getElementById('pantry-items');
+                
+                if (pantryItems.length === 0) {
+                    pantryContainer.innerHTML = '<div class="no-data">No items expiring soon</div>';
+                } else {
+                    pantryContainer.innerHTML = pantryItems.map(item => `
+                        <div class="pantry-item expiring">
+                            <div class="pantry-name">${item.name}</div>
+                            <div class="pantry-location">📍 ${item.location}</div>
+                            <div class="pantry-location">📅 ${new Date(item.expiration_date).toLocaleDateString()}</div>
+                        </div>
+                    `).join('');
+                }
+            } catch (error) {
+                console.error('Error fetching recipes/pantry:', error);
+            }
+        }
+
+        function refreshCurrentScreen() {
+            switch (currentScreen) {
+                case 0:
+                    fetchCalendarEvents();
+                    fetchWeather();
+                    break;
+                case 1:
+                    fetchMealPlan();
+                    break;
+                case 2:
+                    fetchGroceryList();
+                    break;
+                case 3:
+                    fetchRecipesAndPantry();
+                    break;
+            }
+        }
+
+        // =============================================
+        // KEYBOARD CONTROLS
+        // =============================================
+
+        document.addEventListener('keydown', (e) => {
+            lastInteraction = Date.now();
+            
+            if (e.key === 'ArrowRight' || e.key === ' ') {
+                e.preventDefault();
+                nextScreen();
+            } else if (e.key === 'ArrowLeft') {
+                e.preventDefault();
+                previousScreen();
+            } else if (e.key >= '1' && e.key <= '4') {
+                e.preventDefault();
+                showScreen(parseInt(e.key) - 1);
+            } else if (e.key === 'r' || e.key === 'R') {
+                e.preventDefault();
+                refreshCurrentScreen();
+            }
+        });
+
+        // Touch/click for manual navigation
+        document.addEventListener('click', () => {
+            lastInteraction = Date.now();
+        });
+
+        // =============================================
+        // INITIALIZATION
+        // =============================================
+
+        function init() {
+            updateDateTime();
+            setInterval(updateDateTime, 1000);
+            
+            refreshCurrentScreen();
+            
+            // Refresh data every 5 minutes
+            setInterval(() => {
+                refreshCurrentScreen();
+            }, 300000);
+            
+            // Start screen rotation
+            startRotation();
+        }
+
+        // Start when page loads
+        window.addEventListener('load', init);
+    </script>
+</body>
+</html>

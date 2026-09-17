@@ -1,16 +1,14 @@
 [Unit]
-Description=Family Calendar Dashboard - Calendar Sync Service
+Description=Family Dashboard Backend API
 After=network.target
 
 [Service]
 Type=simple
 User=pi
-WorkingDirectory=/var/www/html
-ExecStart=/usr/bin/python3 /var/www/html/calendar-sync.py
+WorkingDirectory=/home/pi/family-dashboard/backend
+ExecStart=/usr/bin/python3 /home/pi/family-dashboard/backend/app.py
 Restart=always
 RestartSec=10
-
-# Logging
 StandardOutput=journal
 StandardError=journal
 

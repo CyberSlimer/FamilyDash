@@ -1,0 +1,30 @@
+{
+  "_comment": "Copy this file to calendars.json and edit. Any value may use ${VAR} to pull from config.env. Remove entries you don't need.",
+  "calendars": [
+    {
+      "id": "family",
+      "name": "Family",
+      "type": "ics",
+      "url": "https://calendar.google.com/calendar/ical/YOUR_ID%40group.calendar.google.com/private-XXXX/basic.ics",
+      "color": "#4f8ef7"
+    },
+    {
+      "id": "icloud",
+      "name": "iCloud",
+      "type": "caldav",
+      "url": "https://caldav.icloud.com",
+      "username": "${ICLOUD_USERNAME}",
+      "password": "${ICLOUD_APP_PASSWORD}",
+      "calendars": ["Home", "Kids"],
+      "color": "#e0685c"
+    },
+    {
+      "id": "work",
+      "name": "Work",
+      "type": "ics",
+      "url": "https://outlook.office365.com/owa/calendar/YOUR_CALENDAR_ID/calendar.ics",
+      "color": "#f5a623",
+      "enabled": false
+    }
+  ]
+}

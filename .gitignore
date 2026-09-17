@@ -1,32 +1,27 @@
+# Secrets & local configuration
+config/calendars.json
+.env
+*.local.env
+
+# Database & backups
+backend/dashboard.db
+backend/instance/
+*.db
+*.db.bak
+backups/
+
 # Python
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-.Python
-env/
+*.egg-info/
+.venv/
 venv/
-ENV/
-
-# Sensitive files - DO NOT COMMIT
-calendar-sync-local.py
-*.secret
-*.key
-.env
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
 
 # Logs
 *.log
 
-# Temporary files
-*.tmp
-*.bak
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

@@ -1,0 +1,16 @@
+[Unit]
+Description=Family Dashboard Hardware Controller
+After=network.target dashboard-backend.service
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/family-dashboard/hardware
+ExecStart=/usr/bin/python3 /home/pi/family-dashboard/hardware/controller.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

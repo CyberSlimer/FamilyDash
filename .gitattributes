@@ -1,0 +1,5 @@
+# Deploys to Linux: always use LF so shell scripts and systemd units work
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.db binary
