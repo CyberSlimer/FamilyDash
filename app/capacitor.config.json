@@ -1,0 +1,17 @@
+{
+  "appId": "com.cyberslimer.familydash",
+  "appName": "FamilyDash",
+  "webDir": "www",
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#667eea",
+    "preferredContentMode": "mobile"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchAutoHide": true,
+      "launchShowDuration": 800,
+      "backgroundColor": "#667eea"
+    }
+  }
+}

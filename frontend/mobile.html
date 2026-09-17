@@ -2,10 +2,16 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <title>Family Dashboard Manager</title>
+    <meta name="apple-mobile-web-app-title" content="FamilyDash">
+    <meta name="theme-color" content="#667eea">
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+    <title>FamilyDash</title>
     <style>
         * {
             margin: 0;
@@ -585,11 +591,101 @@
         }
 
         .help-list a { color: #667eea; }
+
+        /* Header row + server settings */
+        .header-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .header-row h1 {
+            margin-bottom: 0;
+        }
+
+        .header-btn {
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            color: white;
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            font-size: 1.2em;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .offline-banner {
+            display: none;
+            background: rgba(255, 59, 48, 0.9);
+            color: white;
+            font-size: 0.9em;
+            padding: 10px 14px;
+            border-radius: 10px;
+            margin-bottom: 12px;
+            cursor: pointer;
+        }
+
+        .offline-banner.show {
+            display: block;
+        }
+
+        .modal-intro {
+            color: #515154;
+            font-size: 0.95em;
+            line-height: 1.5;
+            margin: -8px 0 20px;
+        }
+
+        .modal-intro code {
+            background: #f0f0f2;
+            padding: 1px 6px;
+            border-radius: 5px;
+            font-size: 0.9em;
+        }
+
+        .quick-picks {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin: -8px 0 16px;
+        }
+
+        .chip {
+            background: #f0f0f2;
+            border: none;
+            border-radius: 16px;
+            padding: 6px 12px;
+            font-size: 0.85em;
+            color: #1d1d1f;
+            cursor: pointer;
+        }
+
+        /* In the native app the whole page sits under the status bar */
+        body.native .header {
+            padding-top: max(env(safe-area-inset-top), 44px);
+        }
+
+        body.native .modal {
+            padding-top: max(env(safe-area-inset-top), 20px);
+            padding-bottom: max(env(safe-area-inset-bottom), 20px);
+        }
+
+        body.native .fab {
+            bottom: calc(30px + env(safe-area-inset-bottom));
+        }
     </style>
 </head>
 <body>
     <div class="header">
-        <h1>Family Dashboard</h1>
+        <div class="header-row">
+            <h1>Family Dashboard</h1>
+            <button class="header-btn" id="server-settings-btn" onclick="openServerSettings()" title="Dashboard server" aria-label="Dashboard server settings">⚙️</button>
+        </div>
+        <div id="offline-banner" class="offline-banner" onclick="openServerSettings()"></div>
         <div class="tabs">
             <button class="tab active" onclick="switchTab('recipes')">📖 Recipes</button>
             <button class="tab" onclick="switchTab('meals')">🍽️ Meals</button>
@@ -810,6 +906,32 @@
         </div>
     </div>
 
+    <!-- Server Settings Modal (first launch in the app, or via ⚙️) -->
+    <div id="server-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">Dashboard Server</div>
+            <p class="modal-intro" id="server-intro">Enter the address of the Raspberry Pi running your Family Dashboard. It's shown at the end of <code>install.sh</code>, or use the Pi's hostname.</p>
+            <form onsubmit="saveServer(event)">
+                <div class="form-group">
+                    <label class="form-label">Server address</label>
+                    <input type="text" class="form-input" id="server-url" placeholder="192.168.1.50:5000 or raspberrypi.local:5000"
+                           autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="url">
+                    <div class="form-hint">Port 5000 is assumed if you leave it off.</div>
+                </div>
+                <div class="quick-picks" id="server-quick-picks">
+                    <button type="button" class="chip" onclick="document.getElementById('server-url').value='raspberrypi.local:5000'">raspberrypi.local</button>
+                    <button type="button" class="chip" onclick="document.getElementById('server-url').value='familydash.local:5000'">familydash.local</button>
+                </div>
+                <div id="server-test-result" class="test-result"></div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" id="server-cancel-btn" onclick="closeModal('server-modal')">Cancel</button>
+                    <button type="button" class="btn btn-secondary" id="server-test-btn" onclick="testServer()">Test</button>
+                    <button type="submit" class="btn btn-primary">Connect</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- Add/Edit Calendar Modal -->
     <div id="calendar-modal" class="modal">
         <div class="modal-content">
@@ -872,7 +994,131 @@
     </div>
 
     <script>
-        const API_BASE = window.location.origin + '/api';
+        // =============================================
+        // SERVER CONNECTION
+        // =============================================
+        // When served by the Raspberry Pi (http://<pi>:5000/mobile) the API is on
+        // the same origin. Inside the packaged iOS app the page is loaded from the
+        // app bundle (capacitor://localhost), so the Pi's address is stored locally.
+
+        const SERVER_KEY = 'familydash.server';
+        const IS_NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform())
+            || /^(capacitor|ionic|file):/.test(window.location.protocol);
+
+        function normalizeServer(input) {
+            let url = String(input || '').trim();
+            if (!url) return '';
+            if (!/^https?:\/\//i.test(url)) url = 'http://' + url;
+            url = url.replace(/\/+$/, '').replace(/\/(mobile|api)$/, '');
+            // Default to the dashboard port when none was given
+            if (!/:\d+$/.test(url.replace(/^https?:\/\//, ''))) url += ':5000';
+            return url;
+        }
+
+        function savedServer() {
+            try { return localStorage.getItem(SERVER_KEY) || ''; } catch (e) { return ''; }
+        }
+
+        function resolveApiBase() {
+            const stored = savedServer();
+            if (IS_NATIVE) return stored ? stored + '/api' : null;
+            return (stored || window.location.origin) + '/api';
+        }
+
+        let API_BASE = resolveApiBase();
+
+        // Wrap fetch so any failure to reach the Pi shows the banner (and clears it on
+        // success). API calls also get a timeout: a request to a Pi that's off, or on a
+        // different Wi-Fi, would otherwise hang for a minute or more before failing.
+        const API_TIMEOUT_MS = 12000;
+        const rawFetch = window.fetch.bind(window);
+        window.fetch = async function (input, init) {
+            const isApi = typeof input === 'string' && API_BASE && input.startsWith(API_BASE);
+            if (!isApi) return rawFetch(input, init);
+
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+            try {
+                const res = await rawFetch(input, { ...(init || {}), signal: (init && init.signal) || controller.signal });
+                setOffline(false);
+                return res;
+            } catch (err) {
+                setOffline(true);
+                throw err;
+            } finally {
+                clearTimeout(timer);
+            }
+        };
+
+        function setOffline(offline) {
+            const banner = document.getElementById('offline-banner');
+            if (!banner) return;
+            if (offline) {
+                const where = API_BASE ? API_BASE.replace(/\/api$/, '') : 'the dashboard';
+                banner.textContent = `⚠️ Can't reach ${where} — tap to change server`;
+                banner.classList.add('show');
+            } else {
+                banner.classList.remove('show');
+            }
+        }
+
+        function openServerSettings(firstRun = false) {
+            const current = savedServer() || (IS_NATIVE ? '' : window.location.origin);
+            document.getElementById('server-url').value = current.replace(/^http:\/\//, '');
+            document.getElementById('server-test-result').textContent = '';
+            document.getElementById('server-test-result').className = 'test-result';
+            document.getElementById('server-cancel-btn').style.display = firstRun ? 'none' : '';
+            document.getElementById('server-intro').style.display = (firstRun || IS_NATIVE) ? '' : 'none';
+            openModal('server-modal');
+            if (firstRun) setTimeout(() => document.getElementById('server-url').focus(), 300);
+        }
+
+        async function probeServer(base) {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 6000);
+            try {
+                const res = await rawFetch(`${base}/api/health`, { signal: controller.signal, cache: 'no-store' });
+                if (!res.ok) return { ok: false, error: `Server answered ${res.status}` };
+                const body = await res.json();
+                if (!body || body.app !== 'familydash') return { ok: false, error: 'That address is not a Family Dashboard' };
+                return { ok: true, info: body };
+            } catch (err) {
+                return { ok: false, error: err.name === 'AbortError' ? 'Timed out — is the Pi on and on the same Wi-Fi?' : 'Could not connect' };
+            } finally {
+                clearTimeout(timer);
+            }
+        }
+
+        async function testServer() {
+            const base = normalizeServer(document.getElementById('server-url').value);
+            const box = document.getElementById('server-test-result');
+            const btn = document.getElementById('server-test-btn');
+            if (!base) { box.className = 'test-result error'; box.textContent = 'Enter an address first'; return null; }
+            btn.disabled = true; btn.textContent = 'Testing…';
+            box.className = 'test-result'; box.textContent = `Connecting to ${base}…`;
+            const result = await probeServer(base);
+            btn.disabled = false; btn.textContent = 'Test';
+            if (result.ok) {
+                box.className = 'test-result ok';
+                box.innerHTML = `<strong>✓ Found your dashboard</strong> on ${esc(result.info.hostname || base)}`
+                    + (result.info.calendars != null ? ` · ${result.info.calendars} calendar${result.info.calendars === 1 ? '' : 's'}` : '');
+            } else {
+                box.className = 'test-result error';
+                box.innerHTML = `<strong>✗ ${esc(result.error)}</strong>`;
+            }
+            return result.ok ? base : null;
+        }
+
+        async function saveServer(event) {
+            event.preventDefault();
+            const base = await testServer();
+            if (!base) return;
+            try { localStorage.setItem(SERVER_KEY, base); } catch (e) { /* private mode */ }
+            API_BASE = base + '/api';
+            closeModal('server-modal');
+            setOffline(false);
+            loadTabData(currentTab);
+        }
         let currentTab = 'recipes';
 
         // =============================================
@@ -1644,9 +1890,10 @@
         // Close modal on background click
         document.querySelectorAll('.modal').forEach(modal => {
             modal.addEventListener('click', (e) => {
-                if (e.target === modal) {
-                    closeModal(modal.id);
-                }
+                if (e.target !== modal) return;
+                // First-run server setup can't be dismissed — there's nothing behind it yet
+                if (modal.id === 'server-modal' && !API_BASE) return;
+                closeModal(modal.id);
             });
         });
 
@@ -1655,7 +1902,18 @@
         // =============================================
 
         window.addEventListener('load', () => {
+            if (IS_NATIVE) document.body.classList.add('native');
+            if (!API_BASE) {
+                // Packaged app, first launch: ask where the Pi is before loading anything
+                openServerSettings(true);
+                return;
+            }
             loadRecipes();
+        });
+
+        // Refresh the current tab when the app comes back to the foreground
+        document.addEventListener('visibilitychange', () => {
+            if (document.visibilityState === 'visible' && API_BASE) loadTabData(currentTab);
         });
     </script>
 </body>

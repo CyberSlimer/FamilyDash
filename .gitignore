@@ -28,3 +28,7 @@ Thumbs.db
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# iOS app (Capacitor)
+app/node_modules/
+app/www/

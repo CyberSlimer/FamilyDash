@@ -16,6 +16,7 @@ A complete family command center running on Raspberry Pi 4 with a 27" landscape 
 - **Grocery Lists** - Manage shopping lists, auto-generate from meals
 - **Pantry Tracking** - Track inventory and expiration dates
 - **Calendar Setup** - Add Google/iCloud/Outlook feeds, test them, pick colors
+- **Installable** - Add to Home Screen as a PWA, or build the native iOS app in `app/`
 
 ### Hardware Controls
 - **Physical Button** - Advance to next screen
@@ -301,6 +302,20 @@ sudo systemctl restart dashboard-backend
   cd backend && python3 calendar_sync.py
   ```
 
+## 📱 Phone App
+
+The management UI works three ways — same features in all of them:
+
+| | How | Best for |
+|---|---|---|
+| **Browser** | Open `http://<pi-ip>:5000/mobile` | Quick edits from any device |
+| **Home-screen app (PWA)** | Open that URL in Safari → Share → **Add to Home Screen** | Full-screen app icon with zero setup; works on iPhone, iPad and Android |
+| **Native iOS app** | Build from [`app/`](app/README.md) with Xcode, ship via TestFlight | A real App Store-style install for the household, and the base for push notifications later |
+
+The native app bundles the same `frontend/mobile.html`; on first launch it asks for the Pi's
+address and remembers it (⚙️ in the header to change it). See [app/README.md](app/README.md)
+for the build steps — everything except the final Xcode build runs on any OS.
+
 ## 🛠️ Troubleshooting
 
 ### Dashboard not showing on boot
@@ -372,8 +387,9 @@ vcgencmd display_power 1  # On
 - `PUT /api/pantry/{id}` - Update item
 - `DELETE /api/pantry/{id}` - Delete item
 
-### Weather
-- `GET /api/weather` - Get Rochester, NY weather
+### Weather & System
+- `GET /api/weather` - Weather + NWS alerts for the configured location
+- `GET /api/health` - Server identity for the app's server-setup screen
 
 ### Calendar
 - `GET /api/calendar/events?start_date=&end_date=` - Events overlapping the range (ISO dates; defaults to today)

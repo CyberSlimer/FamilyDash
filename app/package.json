@@ -1,0 +1,20 @@
+{
+  "name": "familydash-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "FamilyDash iOS app - a Capacitor shell around frontend/mobile.html",
+  "scripts": {
+    "build": "node scripts/build.js",
+    "sync": "npm run build && npx cap sync ios",
+    "ios": "npm run sync && npx cap open ios",
+    "assets": "npx capacitor-assets generate --ios --iconBackgroundColor #667eea --splashBackgroundColor #667eea --splashBackgroundColorDark #2b2f5c"
+  },
+  "dependencies": {
+    "@capacitor/core": "^6.1.0",
+    "@capacitor/ios": "^6.1.0"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^6.1.0"
+  }
+}

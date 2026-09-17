@@ -142,6 +142,13 @@ class CalendarApiTests(unittest.TestCase):
         self.assertFalse(by_id['broken']['status']['ok'])
         self.assertIn('404', by_id['broken']['status']['error'])
 
+    def test_health(self):
+        body = self.client.get('/api/health').get_json()
+        self.assertEqual(body['app'], 'familydash')
+        self.assertTrue(body['hostname'])
+        self.assertIn('version', body)
+        self.assertEqual(body['calendars'], 0)
+
     # ---- test endpoint -------------------------------------------------------
 
     def test_test_endpoint(self):

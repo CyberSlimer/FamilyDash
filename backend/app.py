@@ -852,6 +852,21 @@ def setting(key):
 # FRONTEND ROUTES
 # ============================================================================
 
+APP_VERSION = '1.0.0'
+
+@app.route('/api/health', methods=['GET'])
+def health():
+    """Used by the iOS app / PWA to find and verify a dashboard server."""
+    import socket
+    return jsonify({
+        'app': 'familydash',
+        'version': APP_VERSION,
+        'hostname': socket.gethostname(),
+        'location': LOCATION_NAME,
+        'calendars': len(calendar_sync.calendars),
+        'time': datetime.now().astimezone().isoformat(),
+    })
+
 @app.route('/')
 def index():
     return send_from_directory(app.static_folder, 'index.html')
