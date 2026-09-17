@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Used by: xcodebuild -exportArchive -exportOptionsPlist app/ExportOptions.plist -->
+	<key>method</key>
+	<string>app-store-connect</string>
+	<key>signingStyle</key>
+	<string>automatic</string>
+	<key>destination</key>
+	<string>export</string>
+	<key>uploadSymbols</key>
+	<true/>
+	<key>manageAppVersionAndBuildNumber</key>
+	<false/>
+	<!-- Fill in your Team ID (developer.apple.com -> Membership) if xcodebuild can't infer it -->
+	<!-- <key>teamID</key><string>XXXXXXXXXX</string> -->
+</dict>
+</plist>

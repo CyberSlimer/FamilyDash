@@ -313,8 +313,10 @@ The management UI works three ways — same features in all of them:
 | **Native iOS app** | Build from [`app/`](app/README.md) with Xcode, ship via TestFlight | A real App Store-style install for the household, and the base for push notifications later |
 
 The native app bundles the same `frontend/mobile.html`; on first launch it asks for the Pi's
-address and remembers it (⚙️ in the header to change it). See [app/README.md](app/README.md)
-for the build steps — everything except the final Xcode build runs on any OS.
+address and remembers it (⚙️ in the header to change it). Type `demo` as the address to try
+the app with sample data and no server. See [app/README.md](app/README.md) for the build
+steps — everything except the final Xcode build runs on any OS — and
+[docs/APP_STORE_SUBMISSION.md](docs/APP_STORE_SUBMISSION.md) for TestFlight / App Store.
 
 ## 🛠️ Troubleshooting
 

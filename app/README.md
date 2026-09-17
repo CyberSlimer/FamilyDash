@@ -7,7 +7,13 @@ anything you change for the web version ships in the app too.
 
 On first launch the app asks for the Pi's address (e.g. `192.168.1.50:5000` or
 `raspberrypi.local:5000`), verifies it against `/api/health`, and remembers it.
-The ⚙️ button in the header changes it later.
+The ⚙️ button in the header changes it later. Typing **`demo`** instead runs the app on
+built-in sample data with no server — used for App Store screenshots and App Review.
+
+**Submitting to Apple?** Everything App Store Connect asks for is pre-written in
+[`docs/APP_STORE_SUBMISSION.md`](../docs/APP_STORE_SUBMISSION.md), and
+[`docs/MAC_HANDOFF_PROMPT.md`](../docs/MAC_HANDOFF_PROMPT.md) is a paste-ready prompt for a
+Claude Code session on the Mac that does the whole build/sign/upload.
 
 ## Layout
 
@@ -15,8 +21,10 @@ The ⚙️ button in the header changes it later.
 app/
 ├── capacitor.config.json   # app id, name, iOS options
 ├── package.json            # Capacitor deps + scripts
+├── ExportOptions.plist     # for xcodebuild -exportArchive (App Store Connect upload)
 ├── scripts/
-│   ├── build.js            # frontend/mobile.html -> www/index.html
+│   ├── build.js            # frontend/mobile.html -> www/index.html  (--demo for screenshots)
+│   ├── screenshots.sh      # captures App Store screenshots from the simulator (macOS)
 │   └── make_icons.py       # regenerates resources/* and frontend/icons/*
 ├── resources/              # 1024px icon + 2732px splash (source images)
 ├── www/                    # generated - do not edit (git-ignored)
@@ -33,6 +41,7 @@ app/
 cd app
 npm install                 # once
 npm run build               # bundle the web UI into www/
+npm run build:demo          # same, but the app opens in demo mode (screenshots only - never ship)
 npm run assets              # regenerate iOS icons/splash from resources/ (only after changing them)
 python scripts/make_icons.py   # regenerate resources/ + PWA icons from code
 ```
@@ -64,6 +73,12 @@ In Xcode:
 The first time the app talks to the Pi, iOS asks *"FamilyDash would like to find and connect to devices on your local network"* — tap **Allow**. (That prompt comes from `NSLocalNetworkUsageDescription` in `Info.plist`; the `NSAppTransportSecurity` entry there is what permits plain `http://` to the Pi.)
 
 After pod install succeeds, commit `ios/App/Podfile.lock` so builds are reproducible.
+
+## App Store screenshots
+
+```bash
+npm run screenshots         # macOS: builds demo mode, boots simulators, saves app/screenshots/<device>/*.png
+```
 
 ## Shipping to the family (TestFlight)
 

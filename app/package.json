@@ -5,6 +5,8 @@
   "description": "FamilyDash iOS app - a Capacitor shell around frontend/mobile.html",
   "scripts": {
     "build": "node scripts/build.js",
+    "build:demo": "node scripts/build.js --demo",
+    "screenshots": "bash scripts/screenshots.sh",
     "sync": "npm run build && npx cap sync ios",
     "ios": "npm run sync && npx cap open ios",
     "assets": "npx capacitor-assets generate --ios --iconBackgroundColor #667eea --splashBackgroundColor #667eea --splashBackgroundColorDark #2b2f5c"

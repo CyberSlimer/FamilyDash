@@ -654,6 +654,25 @@
             margin: -8px 0 16px;
         }
 
+        .chip-demo {
+            background: #eef0ff;
+            color: #4a3f8f;
+            font-weight: 500;
+        }
+
+        .demo-badge {
+            display: none;
+            background: rgba(255, 255, 255, 0.25);
+            font-size: 0.7em;
+            padding: 3px 8px;
+            border-radius: 8px;
+            margin-left: 8px;
+            vertical-align: middle;
+            letter-spacing: 0.05em;
+        }
+
+        body.demo .demo-badge { display: inline-block; }
+
         .chip {
             background: #f0f0f2;
             border: none;
@@ -682,7 +701,7 @@
 <body>
     <div class="header">
         <div class="header-row">
-            <h1>Family Dashboard</h1>
+            <h1>Family Dashboard<span class="demo-badge">DEMO</span></h1>
             <button class="header-btn" id="server-settings-btn" onclick="openServerSettings()" title="Dashboard server" aria-label="Dashboard server settings">⚙️</button>
         </div>
         <div id="offline-banner" class="offline-banner" onclick="openServerSettings()"></div>
@@ -916,11 +935,12 @@
                     <label class="form-label">Server address</label>
                     <input type="text" class="form-input" id="server-url" placeholder="192.168.1.50:5000 or raspberrypi.local:5000"
                            autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" inputmode="url">
-                    <div class="form-hint">Port 5000 is assumed if you leave it off.</div>
+                    <div class="form-hint">Port 5000 is assumed if you leave it off. No Pi yet? Type <strong>demo</strong> to explore with sample data.</div>
                 </div>
                 <div class="quick-picks" id="server-quick-picks">
                     <button type="button" class="chip" onclick="document.getElementById('server-url').value='raspberrypi.local:5000'">raspberrypi.local</button>
                     <button type="button" class="chip" onclick="document.getElementById('server-url').value='familydash.local:5000'">familydash.local</button>
+                    <button type="button" class="chip chip-demo" onclick="document.getElementById('server-url').value='demo'; testServer()">✨ Try the demo</button>
                 </div>
                 <div id="server-test-result" class="test-result"></div>
                 <div class="modal-actions">
@@ -1005,9 +1025,127 @@
         const IS_NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform())
             || /^(capacitor|ionic|file):/.test(window.location.protocol);
 
+        // ---- Demo mode -------------------------------------------------------
+        // Enter "demo" as the server address and the app runs on built-in sample
+        // data with no Pi at all. Used for App Store screenshots and so App Review
+        // can exercise the app; also a harmless way to try it before setting up.
+        const DEMO_SERVER = 'demo';
+
+        function demoData() {
+            const today = new Date(); today.setHours(0, 0, 0, 0);
+            const day = (offset, h = 0, m = 0) => { const d = new Date(today); d.setDate(d.getDate() + offset); d.setHours(h, m, 0, 0); return d; };
+            const iso = d => d.toISOString();
+            const ymd = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            const weekStart = day(-today.getDay());
+            const wk = (i, h, m) => { const d = new Date(weekStart); d.setDate(d.getDate() + i); d.setHours(h || 0, m || 0, 0, 0); return d; };
+
+            const recipes = [
+                { id: 1, name: 'Sheet-Pan Chicken Fajitas', description: 'Weeknight favorite, one pan.', prep_time: 15, cook_time: 25, servings: 4, tags: ['dinner', 'mexican', 'quick'], favorite: true, ingredients: ['1.5 lb chicken breast', '3 bell peppers', '1 red onion', '2 tbsp fajita seasoning', '8 flour tortillas'], instructions: '' },
+                { id: 2, name: 'Sunday Pancakes', description: 'Fluffy buttermilk pancakes.', prep_time: 10, cook_time: 15, servings: 4, tags: ['breakfast', 'weekend'], favorite: true, ingredients: ['2 cups flour', '2 cups buttermilk', '2 eggs', '2 tbsp sugar', '1 tsp baking soda'], instructions: '' },
+                { id: 3, name: 'Slow-Cooker Chili', description: 'Set it in the morning, done by dinner.', prep_time: 20, cook_time: 480, servings: 8, tags: ['dinner', 'slow-cooker', 'freezer'], favorite: false, ingredients: ['2 lb ground beef', '2 cans kidney beans', '1 can crushed tomatoes', '1 onion', '3 tbsp chili powder'], instructions: '' },
+                { id: 4, name: 'Greek Salad Bowls', description: 'No-cook lunch.', prep_time: 15, cook_time: 0, servings: 4, tags: ['lunch', 'vegetarian', 'quick'], favorite: false, ingredients: ['1 cucumber', '2 cups cherry tomatoes', '1 cup feta', 'Kalamata olives', '2 cups cooked quinoa'], instructions: '' },
+                { id: 5, name: 'Baked Ziti', description: 'Feeds a crowd; freezes well.', prep_time: 20, cook_time: 40, servings: 8, tags: ['dinner', 'italian', 'freezer'], favorite: true, ingredients: ['1 lb ziti', '1 jar marinara', '15 oz ricotta', '2 cups mozzarella', '1 lb Italian sausage'], instructions: '' },
+            ];
+            const meals = [
+                { id: 1, date: ymd(wk(0)), meal_type: 'breakfast', recipe_id: 2, recipe_name: 'Sunday Pancakes' },
+                { id: 2, date: ymd(wk(0)), meal_type: 'dinner', recipe_id: 5, recipe_name: 'Baked Ziti' },
+                { id: 3, date: ymd(wk(1)), meal_type: 'dinner', recipe_id: 1, recipe_name: 'Sheet-Pan Chicken Fajitas' },
+                { id: 4, date: ymd(wk(2)), meal_type: 'dinner', recipe_id: null, recipe_name: 'Leftovers', custom_meal: 'Leftovers' },
+                { id: 5, date: ymd(wk(3)), meal_type: 'dinner', recipe_id: 3, recipe_name: 'Slow-Cooker Chili' },
+                { id: 6, date: ymd(wk(4)), meal_type: 'lunch', recipe_id: 4, recipe_name: 'Greek Salad Bowls' },
+                { id: 7, date: ymd(wk(4)), meal_type: 'dinner', recipe_id: null, recipe_name: 'Pizza night 🍕', custom_meal: 'Pizza night 🍕' },
+                { id: 8, date: ymd(wk(5)), meal_type: 'dinner', recipe_id: 1, recipe_name: 'Sheet-Pan Chicken Fajitas' },
+            ];
+            const grocery = [
+                { id: 1, name: 'Chicken breast', quantity: '1.5 lb', category: 'meat', checked: false, recipe_id: 1, recipe_name: 'Sheet-Pan Chicken Fajitas' },
+                { id: 2, name: 'Bell peppers', quantity: '3', category: 'produce', checked: false, recipe_id: 1, recipe_name: 'Sheet-Pan Chicken Fajitas' },
+                { id: 3, name: 'Flour tortillas', quantity: '8', category: 'bakery', checked: true, recipe_id: 1, recipe_name: 'Sheet-Pan Chicken Fajitas' },
+                { id: 4, name: 'Buttermilk', quantity: '1 qt', category: 'dairy', checked: false, recipe_id: 2, recipe_name: 'Sunday Pancakes' },
+                { id: 5, name: 'Ricotta', quantity: '15 oz', category: 'dairy', checked: false, recipe_id: 5, recipe_name: 'Baked Ziti' },
+                { id: 6, name: 'Bananas', quantity: '1 bunch', category: 'produce', checked: false },
+                { id: 7, name: 'Paper towels', quantity: '', category: 'other', checked: false },
+                { id: 8, name: 'Frozen peas', quantity: '2 bags', category: 'frozen', checked: true },
+            ];
+            const pantry = [
+                { id: 1, name: 'Milk', quantity: '1 gal', category: 'dairy', location: 'fridge', expiration_date: ymd(day(2)) },
+                { id: 2, name: 'Greek yogurt', quantity: '4', category: 'dairy', location: 'fridge', expiration_date: ymd(day(5)) },
+                { id: 3, name: 'Ground beef', quantity: '2 lb', category: 'meat', location: 'freezer', expiration_date: ymd(day(60)) },
+                { id: 4, name: 'Rice', quantity: '5 lb', category: 'pantry', location: 'pantry', expiration_date: null },
+                { id: 5, name: 'Black beans', quantity: '6 cans', category: 'pantry', location: 'pantry', expiration_date: ymd(day(400)) },
+                { id: 6, name: 'Strawberries', quantity: '1 lb', category: 'produce', location: 'fridge', expiration_date: ymd(day(1)) },
+            ];
+            const calendars = [
+                { id: 'family', name: 'Family', type: 'ics', url: 'https://calendar.google.com/calendar/ical/…/basic.ics', color: '#4f8ef7', enabled: true, has_password: false, password_ref: null, status: { ok: true, count: 14, fetched_at: iso(new Date(Date.now() - 4 * 60000)) } },
+                { id: 'icloud', name: 'iCloud', type: 'caldav', url: 'https://caldav.icloud.com', username: 'you@icloud.com', color: '#e0685c', enabled: true, has_password: true, password_ref: null, calendars: ['Home', 'Kids'], status: { ok: true, count: 9, fetched_at: iso(new Date(Date.now() - 4 * 60000)) } },
+                { id: 'school', name: 'School', type: 'ics', url: 'webcal://school.example.org/calendar.ics', color: '#7ed321', enabled: true, has_password: false, password_ref: null, status: { ok: true, count: 6, fetched_at: iso(new Date(Date.now() - 4 * 60000)) } },
+                { id: 'work', name: 'Work', type: 'ics', url: 'https://outlook.office365.com/owa/calendar/…/calendar.ics', color: '#f5a623', enabled: false, has_password: false, password_ref: null, status: null },
+            ];
+            const ev = (id, title, start, end, cal, extra = {}) => ({ id, title, start: iso(start), end: iso(end), all_day: false, location: '', description: '', calendar: cal.id, calendar_name: cal.name, color: cal.color, ...extra });
+            const events = [
+                ev('e1', 'Picture Day', day(0), day(1), calendars[2], { all_day: true }),
+                ev('e2', 'Dentist – Maya', day(0, 14, 30), day(0, 15, 15), calendars[1], { location: 'Park Ave Dental' }),
+                ev('e3', 'Soccer Practice', day(0, 17, 30), day(0, 18, 30), calendars[0], { location: 'Cobbs Hill Park' }),
+                ev('e4', 'PTA Meeting', day(1, 19, 0), day(1, 20, 0), calendars[2]),
+                ev('e5', 'Grandma visiting', day(2), day(5), calendars[0], { all_day: true }),
+                ev('e6', 'Piano lesson', day(3, 16, 0), day(3, 16, 45), calendars[1]),
+                ev('e7', 'Soccer game vs. Penfield', day(5, 9, 0), day(5, 10, 30), calendars[0], { location: 'Field 3' }),
+            ];
+            return { recipes, meals, grocery, pantry, calendars, events };
+        }
+
+        let demoStore = null;
+        function demoResponse(url, init) {
+            if (!demoStore) demoStore = demoData();
+            const method = ((init && init.method) || 'GET').toUpperCase();
+            const [pathPart, queryPart] = String(url).split('?');
+            const p = pathPart.replace(/^.*?\/api/, '');
+            const params = new URLSearchParams(queryPart || '');
+            const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+            const now = new Date().toISOString();
+
+            if (method === 'GET') {
+                if (p === '/health') return json({ app: 'familydash', version: 'demo', hostname: 'Demo', location: 'Rochester, NY', calendars: 3, time: now });
+                if (p === '/recipes') return json(demoStore.recipes);
+                if (p === '/meals') return json(demoStore.meals);
+                if (p === '/grocery') return json(demoStore.grocery);
+                if (p === '/pantry') return json(demoStore.pantry);
+                if (p === '/calendar/calendars') return json(demoStore.calendars);
+                if (p === '/calendar/events') {
+                    const s = new Date(params.get('start_date') || 0), e = new Date(params.get('end_date') || 8.64e15);
+                    return json(demoStore.events.filter(x => new Date(x.end) > s && new Date(x.start) < e));
+                }
+                if (p === '/calendar/status') return json({ enabled: true, last_refresh: now, refresh_interval: 300, timezone: 'America/New_York',
+                    calendars: demoStore.calendars.filter(c => c.enabled).map(c => ({ id: c.id, name: c.name, type: c.type, color: c.color, ...(c.status || {}) })) });
+                return json([]);
+            }
+            // Writes: apply the simple ones in memory so the demo feels alive, never persist.
+            const body = (() => { try { return JSON.parse(init.body || '{}'); } catch (e) { return {}; } })();
+            const idFrom = re => { const m = p.match(re); return m ? m[1] : null; };
+            let id;
+            if ((id = idFrom(/^\/grocery\/(\d+)$/))) {
+                const item = demoStore.grocery.find(x => x.id == id);
+                if (method === 'DELETE') demoStore.grocery = demoStore.grocery.filter(x => x.id != id);
+                else if (item) Object.assign(item, body);
+            } else if (p === '/grocery' && method === 'POST') demoStore.grocery.push({ id: Date.now(), checked: false, ...body });
+            else if (p === '/grocery/clear-checked') demoStore.grocery = demoStore.grocery.filter(x => !x.checked);
+            else if ((id = idFrom(/^\/pantry\/(\d+)$/)) && method === 'DELETE') demoStore.pantry = demoStore.pantry.filter(x => x.id != id);
+            else if (p === '/pantry' && method === 'POST') demoStore.pantry.push({ id: Date.now(), ...body });
+            else if ((id = idFrom(/^\/recipes\/(\d+)$/))) {
+                const r = demoStore.recipes.find(x => x.id == id);
+                if (method === 'DELETE') demoStore.recipes = demoStore.recipes.filter(x => x.id != id);
+                else if (r) Object.assign(r, body);
+            } else if ((id = idFrom(/^\/calendar\/calendars\/([^/]+)$/))) {
+                const c = demoStore.calendars.find(x => x.id === id);
+                if (method === 'DELETE') demoStore.calendars = demoStore.calendars.filter(x => x.id !== id);
+                else if (c) Object.assign(c, body);
+            } else if (p === '/calendar/test') return json({ ok: true, count: 3, sample: demoStore.events.slice(0, 3), error: null, available_calendars: body.type === 'caldav' ? ['Home', 'Kids', 'Work'] : null });
+            return json({ id: Date.now(), message: 'ok (demo)' }, method === 'POST' ? 201 : 200);
+        }
+
         function normalizeServer(input) {
             let url = String(input || '').trim();
             if (!url) return '';
+            if (url.toLowerCase() === DEMO_SERVER) return DEMO_SERVER;
             if (!/^https?:\/\//i.test(url)) url = 'http://' + url;
             url = url.replace(/\/+$/, '').replace(/\/(mobile|api)$/, '');
             // Default to the dashboard port when none was given
@@ -1035,6 +1173,7 @@
         window.fetch = async function (input, init) {
             const isApi = typeof input === 'string' && API_BASE && input.startsWith(API_BASE);
             if (!isApi) return rawFetch(input, init);
+            if (API_BASE === DEMO_SERVER + '/api') return demoResponse(input, init);
 
             const controller = new AbortController();
             const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
@@ -1064,7 +1203,7 @@
 
         function openServerSettings(firstRun = false) {
             const current = savedServer() || (IS_NATIVE ? '' : window.location.origin);
-            document.getElementById('server-url').value = current.replace(/^http:\/\//, '');
+            document.getElementById('server-url').value = current === DEMO_SERVER ? DEMO_SERVER : current.replace(/^http:\/\//, '');
             document.getElementById('server-test-result').textContent = '';
             document.getElementById('server-test-result').className = 'test-result';
             document.getElementById('server-cancel-btn').style.display = firstRun ? 'none' : '';
@@ -1074,6 +1213,7 @@
         }
 
         async function probeServer(base) {
+            if (base === DEMO_SERVER) return { ok: true, info: { hostname: 'Demo (sample data)', calendars: 3 } };
             const controller = new AbortController();
             const timer = setTimeout(() => controller.abort(), 6000);
             try {
@@ -1115,6 +1255,8 @@
             if (!base) return;
             try { localStorage.setItem(SERVER_KEY, base); } catch (e) { /* private mode */ }
             API_BASE = base + '/api';
+            demoStore = null;
+            document.body.classList.toggle('demo', base === DEMO_SERVER);
             closeModal('server-modal');
             setOffline(false);
             loadTabData(currentTab);
@@ -1542,7 +1684,7 @@
                 
                 container.innerHTML = Object.entries(mealsByDate).map(([date, dayMeals]) => `
                     <div class="card">
-                        <h3>${new Date(date).toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</h3>
+                        <h3>${new Date(date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}</h3>
                         <ul class="item-list">
                             ${dayMeals.map(meal => `
                                 <li class="item">
@@ -1903,6 +2045,7 @@
 
         window.addEventListener('load', () => {
             if (IS_NATIVE) document.body.classList.add('native');
+            if (API_BASE === DEMO_SERVER + '/api') document.body.classList.add('demo');
             if (!API_BASE) {
                 // Packaged app, first launch: ask where the Pi is before loading anything
                 openServerSettings(true);

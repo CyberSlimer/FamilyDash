@@ -24,10 +24,18 @@ for (const entry of fs.readdirSync(www)) {
 let html = fs.readFileSync(path.join(frontend, 'mobile.html'), 'utf8');
 // Inside the app the page is loaded from the bundle; a web manifest is meaningless there.
 html = html.replace(/\s*<link rel="manifest"[^>]*>/, '');
+
+// `node build.js --demo` (or FAMILYDASH_DEMO=1) pre-selects demo mode so a simulator
+// opens straight onto sample data - used for App Store screenshots. Never ship this.
+const demo = process.argv.includes('--demo') || process.env.FAMILYDASH_DEMO === '1';
+if (demo) {
+    const seed = '    <script>try { if (!localStorage.getItem("familydash.server")) localStorage.setItem("familydash.server", "demo"); } catch (e) {}</script>\n</head>';
+    html = html.replace('</head>', seed);
+}
 fs.writeFileSync(path.join(www, 'index.html'), html);
 
 // Icons referenced by the page
 fs.cpSync(path.join(frontend, 'icons'), path.join(www, 'icons'), { recursive: true });
 
 const bytes = fs.statSync(path.join(www, 'index.html')).size;
-console.log(`Built www/index.html (${(bytes / 1024).toFixed(1)} KB) from frontend/mobile.html`);
+console.log(`Built www/index.html (${(bytes / 1024).toFixed(1)} KB) from frontend/mobile.html${demo ? '  [DEMO BUILD - not for release]' : ''}`);
