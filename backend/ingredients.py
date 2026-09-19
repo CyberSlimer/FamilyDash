@@ -24,12 +24,17 @@ from fractions import Fraction
 # 2 cans is not 2 heads, so container-style units only combine with themselves.
 # 'each' is the generic count unit and absorbs anything unitless.
 
+# Exact legal definitions, not rounded ones. With rounded factors a quart is
+# not exactly four cups, and "2 cups + 1 quart" formats as "1.5 quart" instead
+# of "1 1/2 quart" because the ratio misses a clean fraction by ~1e-6.
+_FLOZ_ML = 29.5735295625          # 1 US fluid ounce, exactly
+
 _VOLUME = {
-    'tsp': 4.92892, 'teaspoon': 4.92892,
-    'tbsp': 14.7868, 'tablespoon': 14.7868,
-    'floz': 29.5735, 'fluidounce': 29.5735,
-    'cup': 236.588,
-    'pint': 473.176, 'quart': 946.353, 'gallon': 3785.41,
+    'tsp': _FLOZ_ML / 6, 'teaspoon': _FLOZ_ML / 6,
+    'tbsp': _FLOZ_ML / 2, 'tablespoon': _FLOZ_ML / 2,
+    'floz': _FLOZ_ML, 'fluidounce': _FLOZ_ML,
+    'cup': _FLOZ_ML * 8,
+    'pint': _FLOZ_ML * 16, 'quart': _FLOZ_ML * 32, 'gallon': _FLOZ_ML * 128,
     'ml': 1.0, 'milliliter': 1.0, 'cc': 1.0,
     'l': 1000.0, 'liter': 1000.0, 'litre': 1000.0,
 }
@@ -37,8 +42,8 @@ _VOLUME = {
 _MASS = {
     'g': 1.0, 'gram': 1.0,
     'kg': 1000.0, 'kilogram': 1000.0,
-    'oz': 28.3495, 'ounce': 28.3495,
-    'lb': 453.592, 'pound': 453.592,
+    'oz': 28.349523125, 'ounce': 28.349523125,          # exactly 1/16 lb
+    'lb': 28.349523125 * 16, 'pound': 28.349523125 * 16,
     'mg': 0.001, 'milligram': 0.001,
 }
 
@@ -221,30 +226,58 @@ def parse_quantity(text):
     return qty, rest.strip()
 
 
+# A quantity is snapped to a whole number or a common fraction when it is
+# this close. Cooking amounts are never meaningfully precise beyond 1/8, so a
+# loose tolerance only ever helps: it absorbs the rounding that unit
+# conversion leaves behind.
+_FRACTION_TOLERANCE = 1e-4
+
+
 def format_quantity(qty):
     """Render a float the way a person would write it on a list."""
     if qty is None:
         return ''
-    if abs(qty - round(qty)) < 1e-6:
+    if abs(qty - round(qty)) < _FRACTION_TOLERANCE:
         return str(int(round(qty)))
     # Prefer a tidy fraction for the common cooking amounts.
     for denom in (2, 3, 4, 8):
         scaled = qty * denom
-        if abs(scaled - round(scaled)) < 1e-6:
+        if abs(scaled - round(scaled)) < _FRACTION_TOLERANCE:
             whole, num = divmod(int(round(scaled)), denom)
             frac = f'{num}/{denom}'
             return f'{whole} {frac}' if whole else frac
     return f'{qty:.2f}'.rstrip('0').rstrip('.')
 
 
+# Units written as words take a plural; abbreviations don't ("2 tbsp", not
+# "2 tbsps"). Anything not listed is left alone.
+_PLURALS = {
+    'cup': 'cups', 'pint': 'pints', 'quart': 'quarts', 'gallon': 'gallons',
+    'can': 'cans', 'jar': 'jars', 'bottle': 'bottles', 'package': 'packages',
+    'box': 'boxes', 'bag': 'bags', 'bunch': 'bunches', 'clove': 'cloves',
+    'head': 'heads', 'stalk': 'stalks', 'sprig': 'sprigs', 'slice': 'slices',
+    'loaf': 'loaves', 'stick': 'sticks', 'ear': 'ears', 'fillet': 'fillets',
+    'pinch': 'pinches', 'dash': 'dashes', 'handful': 'handfuls',
+    'teaspoon': 'teaspoons', 'tablespoon': 'tablespoons',
+}
+
+
+def plural_unit(unit, qty):
+    """'cup' -> 'cups' for anything but exactly one."""
+    u = canonical_unit(unit)
+    if qty is None or abs(qty - 1) < _FRACTION_TOLERANCE:
+        return u
+    return _PLURALS.get(u, u)
+
+
 def format_amount(qty, unit):
-    """'1 1/2 cup' / '3' / '' — what goes in the quantity column."""
+    """'1 1/2 cups' / '3' / '' — what goes in the quantity column."""
     q = format_quantity(qty)
     u = canonical_unit(unit)
     if u == 'each':
         u = ''
     if q and u:
-        return f'{q} {u}'
+        return f'{q} {plural_unit(u, qty)}'
     return q or (u or '')
 
 

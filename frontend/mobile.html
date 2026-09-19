@@ -696,6 +696,130 @@
         body.native .fab {
             bottom: calc(30px + env(safe-area-inset-bottom));
         }
+
+        /* ---- Inventory pills ---- */
+        .pill {
+            display: inline-block;
+            padding: 2px 8px;
+            margin-left: 6px;
+            border-radius: 999px;
+            font-size: 0.78em;
+            font-weight: 600;
+            white-space: nowrap;
+            vertical-align: middle;
+        }
+        .pill-pantry { background: rgba(80, 160, 110, 0.18); color: #2f7a4f; }
+        .pill-ready  { background: rgba(80, 160, 110, 0.18); color: #2f7a4f; }
+        .pill-warn   { background: rgba(230, 160, 40, 0.20); color: #9a6300; }
+        .pill-short  { background: rgba(214, 90, 80, 0.18); color: #9e3b32; }
+        .pill-done   { background: rgba(120, 120, 130, 0.18); color: #5a5a66; }
+        .item-missing .item-title { opacity: 0.85; }
+
+        .generate-detail {
+            margin-top: 8px;
+            font-size: 0.88em;
+            font-weight: 400;
+            opacity: 0.85;
+            line-height: 1.45;
+        }
+
+        /* ---- Display tab ---- */
+        .screen-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.07);
+        }
+        .screen-row:last-child { border-bottom: none; }
+        .screen-row .screen-name { flex: 1; font-weight: 600; }
+        .screen-row .screen-duration {
+            width: 74px;
+            padding: 6px 8px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            font-size: 0.9em;
+        }
+        .screen-row.is-off .screen-name { opacity: 0.45; }
+        .order-btn {
+            background: rgba(0, 0, 0, 0.05);
+            border: none;
+            border-radius: 8px;
+            width: 30px;
+            height: 30px;
+            font-size: 0.95em;
+            cursor: pointer;
+        }
+        .order-btn:disabled { opacity: 0.25; }
+
+        .swatch-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+            gap: 12px;
+        }
+        .swatch-field { display: flex; align-items: center; gap: 8px; }
+        .swatch-field input[type=color] {
+            width: 38px; height: 38px; padding: 0;
+            border: 1px solid #ddd; border-radius: 8px; background: none;
+        }
+        .swatch-field label { font-size: 0.85em; opacity: 0.8; }
+
+        .theme-preview {
+            height: 74px;
+            border-radius: 12px;
+            margin-top: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 300;
+            font-size: 1.3em;
+            color: #fff;
+        }
+
+        .photo-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+            gap: 10px;
+        }
+        .photo-tile { position: relative; }
+        .photo-tile img {
+            width: 100%;
+            aspect-ratio: 1;
+            object-fit: cover;
+            border-radius: 10px;
+            display: block;
+            background: rgba(0, 0, 0, 0.06);
+        }
+        .photo-tile .photo-remove {
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            background: rgba(0, 0, 0, 0.6);
+            color: #fff;
+            border: none;
+            border-radius: 50%;
+            width: 26px;
+            height: 26px;
+            font-size: 0.85em;
+            cursor: pointer;
+        }
+        .photo-tile .photo-cap {
+            width: 100%;
+            margin-top: 4px;
+            border: 1px solid #e3e3e3;
+            border-radius: 7px;
+            padding: 4px 6px;
+            font-size: 0.78em;
+        }
+        .upload-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+        .upload-hint { font-size: 0.85em; opacity: 0.7; }
+        .display-saved {
+            font-size: 0.85em;
+            color: #2f7a4f;
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+        .display-saved.show { opacity: 1; }
     </style>
 </head>
 <body>
@@ -711,6 +835,7 @@
             <button class="tab" onclick="switchTab('grocery')">🛒 Grocery</button>
             <button class="tab" onclick="switchTab('pantry')">🏪 Pantry</button>
             <button class="tab" onclick="switchTab('calendars')">📅 Calendars</button>
+            <button class="tab" onclick="switchTab('display')">🖥️ Display</button>
         </div>
     </div>
 
@@ -743,8 +868,8 @@
                 <div class="card-header">
                     <h2 class="card-title">Shopping List</h2>
                     <div>
-                        <button class="btn btn-secondary btn-small" onclick="generateGroceryList()" style="margin-right: 10px;">Generate</button>
-                        <button class="btn btn-danger btn-small" onclick="clearChecked()">Clear ✓</button>
+                        <button class="btn btn-secondary btn-small" onclick="openGenerateModal()" style="margin-right: 10px;">Generate</button>
+                        <button class="btn btn-danger btn-small" id="grocery-clear-btn" onclick="clearChecked()">Clear ✓</button>
                     </div>
                 </div>
                 <div id="grocery-list" class="loading">
@@ -762,6 +887,107 @@
                 <div id="pantry-list" class="loading">
                     <div class="spinner"></div>
                 </div>
+            </div>
+        </div>
+
+        <!-- DISPLAY TAB -->
+        <div id="display-tab" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Screens</h2>
+                    <span class="display-saved" id="display-saved">Saved ✓</span>
+                </div>
+                <p class="modal-intro">Turn screens on or off, drag them into order with the
+                   arrows, and set how long each one stays up. Blank duration uses the
+                   default below.</p>
+                <div id="screen-rows"></div>
+            </div>
+
+            <div class="card">
+                <h2 class="card-title">Rotation</h2>
+                <div class="form-group">
+                    <label class="form-label">Default seconds per screen</label>
+                    <input type="number" class="form-input" id="display-rotation" min="5" max="3600">
+                </div>
+                <label class="toggle-label">
+                    <input type="checkbox" id="display-24h"> 24-hour clock
+                </label>
+                <label class="toggle-label">
+                    <input type="checkbox" id="display-indicators"> Show the dots at the bottom
+                </label>
+            </div>
+
+            <div class="card">
+                <h2 class="card-title">Colours &amp; text</h2>
+                <div class="swatch-row">
+                    <div class="swatch-field">
+                        <input type="color" id="theme-primary"><label>Background top</label>
+                    </div>
+                    <div class="swatch-field">
+                        <input type="color" id="theme-secondary"><label>Background bottom</label>
+                    </div>
+                    <div class="swatch-field">
+                        <input type="color" id="theme-text"><label>Text</label>
+                    </div>
+                    <div class="swatch-field">
+                        <input type="color" id="theme-accent"><label>Accent</label>
+                    </div>
+                </div>
+                <div class="theme-preview" id="theme-preview">Family Dashboard</div>
+                <div class="form-group" style="margin-top:16px">
+                    <label class="form-label">Font</label>
+                    <select class="form-select" id="theme-font">
+                        <option value="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">System (default)</option>
+                        <option value="Georgia, 'Times New Roman', serif">Georgia (serif)</option>
+                        <option value="'Trebuchet MS', 'Segoe UI', sans-serif">Trebuchet</option>
+                        <option value="Verdana, Geneva, sans-serif">Verdana (wide)</option>
+                        <option value="'Courier New', ui-monospace, monospace">Courier (typewriter)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Text size <span id="scale-label"></span></label>
+                    <input type="range" id="theme-scale" min="0.7" max="1.5" step="0.05" style="width:100%">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Panel brightness <span id="opacity-label"></span></label>
+                    <input type="range" id="theme-opacity" min="0" max="0.6" step="0.02" style="width:100%">
+                </div>
+                <button class="btn btn-secondary btn-small" onclick="resetDisplay()">Reset to defaults</button>
+            </div>
+
+            <div class="card">
+                <h2 class="card-title">Photos</h2>
+                <p class="modal-intro">Photos show on the Photos screen and as the screensaver
+                   when the dashboard has been idle.</p>
+                <div class="upload-row">
+                    <input type="file" id="photo-input" accept="image/*" multiple
+                           onchange="uploadPhotos(this)" style="display:none">
+                    <button class="btn btn-primary btn-small"
+                            onclick="document.getElementById('photo-input').click()">Add photos</button>
+                    <span class="upload-hint" id="photo-status"></span>
+                </div>
+                <div id="photo-grid" class="photo-grid" style="margin-top:14px"></div>
+            </div>
+
+            <div class="card">
+                <h2 class="card-title">Screensaver</h2>
+                <label class="toggle-label">
+                    <input type="checkbox" id="saver-enabled"> Show photos when nobody's around
+                </label>
+                <div class="form-group">
+                    <label class="form-label">Start after (minutes idle)</label>
+                    <input type="number" class="form-input" id="saver-idle" min="1" max="1440">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Seconds per photo</label>
+                    <input type="number" class="form-input" id="saver-interval" min="2" max="600">
+                </div>
+                <label class="toggle-label">
+                    <input type="checkbox" id="saver-shuffle"> Shuffle
+                </label>
+                <label class="toggle-label">
+                    <input type="checkbox" id="saver-clock"> Show the clock
+                </label>
             </div>
         </div>
 
@@ -790,7 +1016,7 @@
     </div>
 
     <!-- Floating Action Button -->
-    <button class="fab" onclick="showAddModal()">+</button>
+    <button class="fab" id="add-fab" onclick="showAddModal()">+</button>
 
     <!-- Add/Edit Recipe Modal -->
     <div id="recipe-modal" class="modal">
@@ -922,6 +1148,49 @@
                     <button type="submit" class="btn btn-primary">Add</button>
                 </div>
             </form>
+        </div>
+    </div>
+
+    <!-- Generate Grocery List Modal -->
+    <div id="generate-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">Build the list from meals</div>
+            <form onsubmit="generateGroceryList(event)">
+                <div class="form-group">
+                    <label class="form-label">From</label>
+                    <input type="date" class="form-input" id="generate-start">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">To</label>
+                    <input type="date" class="form-input" id="generate-end">
+                </div>
+                <label class="toggle-label">
+                    <input type="checkbox" id="generate-use-pantry" checked>
+                    Skip what's already in the pantry
+                </label>
+                <label class="toggle-label">
+                    <input type="checkbox" id="generate-optional" checked>
+                    Include optional ingredients
+                </label>
+                <div id="generate-result" class="test-result"></div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('generate-modal')">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="generate-submit">Generate</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Meal Ingredient Availability Modal -->
+    <div id="availability-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header" id="availability-title">Ingredients</div>
+            <p class="modal-intro" id="availability-summary"></p>
+            <div id="availability-list"></div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('availability-modal')">Close</button>
+                <button type="button" class="btn btn-primary" id="availability-cook-btn">Cooked it 🍳</button>
+            </div>
         </div>
     </div>
 
@@ -1067,13 +1336,15 @@
                 { id: 8, name: 'Frozen peas', quantity: '2 bags', category: 'frozen', checked: true },
             ];
             const pantry = [
-                { id: 1, name: 'Milk', quantity: '1 gal', category: 'dairy', location: 'fridge', expiration_date: ymd(day(2)) },
+                { id: 1, name: 'Milk', quantity: '1 gallon', category: 'dairy', location: 'fridge', expiration_date: ymd(day(2)) },
                 { id: 2, name: 'Greek yogurt', quantity: '4', category: 'dairy', location: 'fridge', expiration_date: ymd(day(5)) },
                 { id: 3, name: 'Ground beef', quantity: '2 lb', category: 'meat', location: 'freezer', expiration_date: ymd(day(60)) },
                 { id: 4, name: 'Rice', quantity: '5 lb', category: 'pantry', location: 'pantry', expiration_date: null },
                 { id: 5, name: 'Black beans', quantity: '6 cans', category: 'pantry', location: 'pantry', expiration_date: ymd(day(400)) },
                 { id: 6, name: 'Strawberries', quantity: '1 lb', category: 'produce', location: 'fridge', expiration_date: ymd(day(1)) },
-            ];
+                { id: 7, name: 'Mozzarella', quantity: '2 cups', category: 'dairy', location: 'fridge', expiration_date: ymd(day(9)) },
+                { id: 8, name: 'Marinara', quantity: '1 jar', category: 'pantry', location: 'pantry', expiration_date: ymd(day(200)) },
+            ].map(p => ({ ...p, match_key: demoKey(p.name) }));
             const calendars = [
                 { id: 'family', name: 'Family', type: 'ics', url: 'https://calendar.google.com/calendar/ical/…/basic.ics', color: '#4f8ef7', enabled: true, has_password: false, password_ref: null, status: { ok: true, count: 14, fetched_at: iso(new Date(Date.now() - 4 * 60000)) } },
                 { id: 'icloud', name: 'iCloud', type: 'caldav', url: 'https://caldav.icloud.com', username: 'you@icloud.com', color: '#e0685c', enabled: true, has_password: true, password_ref: null, calendars: ['Home', 'Kids'], status: { ok: true, count: 9, fetched_at: iso(new Date(Date.now() - 4 * 60000)) } },
@@ -1090,7 +1361,291 @@
                 ev('e6', 'Piano lesson', day(3, 16, 0), day(3, 16, 45), calendars[1]),
                 ev('e7', 'Soccer game vs. Penfield', day(5, 9, 0), day(5, 10, 30), calendars[0], { location: 'Field 3' }),
             ];
-            return { recipes, meals, grocery, pantry, calendars, events };
+            // Inline SVG so the demo needs no network and no Pi.
+            const photoSvg = (from, to, label) =>
+                'data:image/svg+xml;utf8,' + encodeURIComponent(
+                    `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800">
+                        <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+                            <stop offset="0" stop-color="${from}"/><stop offset="1" stop-color="${to}"/>
+                        </linearGradient></defs>
+                        <rect width="1200" height="800" fill="url(#g)"/>
+                        <circle cx="880" cy="230" r="110" fill="rgba(255,255,255,0.35)"/>
+                        <path d="M0 620 L300 400 L560 620 L820 430 L1200 700 L1200 800 L0 800 Z" fill="rgba(0,0,0,0.22)"/>
+                        <text x="60" y="740" font-family="sans-serif" font-size="54"
+                              fill="rgba(255,255,255,0.92)">${label}</text>
+                    </svg>`);
+            const photos = [
+                { id: 1, url: photoSvg('#f5a623', '#d64550', 'Beach trip'), caption: 'Beach trip', filename: 'demo-1.svg', width: 1200, height: 800, bytes: 4200, sort_order: 1 },
+                { id: 2, url: photoSvg('#4f8ef7', '#7048e8', 'First day of school'), caption: 'First day of school', filename: 'demo-2.svg', width: 1200, height: 800, bytes: 4200, sort_order: 2 },
+                { id: 3, url: photoSvg('#7ed321', '#2f9e44', 'Soccer game'), caption: 'Soccer game', filename: 'demo-3.svg', width: 1200, height: 800, bytes: 4200, sort_order: 3 },
+            ];
+            const display = {
+                rotation_interval: 30, clock_24h: false, show_indicators: true,
+                theme: { primary: '#667eea', secondary: '#764ba2', text: '#ffffff',
+                         accent: '#ffd166', card_opacity: 0.1, scale: 1,
+                         font: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" },
+                screens: [
+                    { id: 'calendar', enabled: true, duration: null },
+                    { id: 'meals', enabled: true, duration: null },
+                    { id: 'grocery', enabled: true, duration: null },
+                    { id: 'recipes', enabled: true, duration: null },
+                    { id: 'photos', enabled: true, duration: 60,
+                      options: { interval: 8, shuffle: true, captions: true } },
+                ],
+                screensaver: { enabled: true, idle_seconds: 300, interval: 8,
+                               shuffle: true, show_clock: true },
+            };
+            return { recipes, meals, grocery, pantry, calendars, events, photos, display,
+                     revision: 1, nextId: 1000 };
+        }
+
+        // ---- Demo-only ingredient maths --------------------------------------
+        // A trimmed port of backend/ingredients.py so demo mode behaves like a
+        // real Pi: quantities add up, the pantry is subtracted, cooking deducts.
+        // A real server always uses the Python implementation; this runs only
+        // when the server address is "demo".
+
+        // Exact legal definitions: with rounded factors a quart isn't exactly
+        // four cups and clean fractions stop printing as fractions.
+        const DEMO_FLOZ = 29.5735295625;
+        const DEMO_VOLUME = { tsp: DEMO_FLOZ / 6, tbsp: DEMO_FLOZ / 2, floz: DEMO_FLOZ,
+                              cup: DEMO_FLOZ * 8, pint: DEMO_FLOZ * 16,
+                              quart: DEMO_FLOZ * 32, gallon: DEMO_FLOZ * 128,
+                              ml: 1, l: 1000 };
+        const DEMO_MASS = { g: 1, kg: 1000, oz: 28.349523125, lb: 28.349523125 * 16 };
+        const DEMO_COUNT = { each: 1, dozen: 12, can: 1, jar: 1, bottle: 1, package: 1,
+                             box: 1, bag: 1, bunch: 1, clove: 1, head: 1, stalk: 1,
+                             sprig: 1, slice: 1, loaf: 1, stick: 1, pinch: 1, dash: 1 };
+        const DEMO_UNIT_ALIASES = {
+            t: 'tsp', teaspoon: 'tsp', tb: 'tbsp', tbs: 'tbsp', tablespoon: 'tbsp',
+            c: 'cup', ounce: 'oz', fluidounce: 'floz', pound: 'lb', lbs: 'lb',
+            gram: 'g', kilogram: 'kg', milliliter: 'ml', liter: 'l', litre: 'l',
+            pt: 'pint', qt: 'quart', gal: 'gallon', pkg: 'package', loaves: 'loaf',
+            piece: 'each', whole: 'each', count: 'each', ct: 'each',
+        };
+        const DEMO_NOISE = new Set(['fresh', 'freshly', 'organic', 'raw', 'whole', 'large',
+            'small', 'medium', 'extra', 'ripe', 'plain', 'unsalted', 'salted', 'optional',
+            'divided', 'about', 'chopped', 'diced', 'minced', 'sliced', 'shredded',
+            'grated', 'peeled', 'seeded', 'trimmed', 'halved', 'quartered', 'cubed',
+            'melted', 'softened', 'beaten', 'drained', 'rinsed', 'crumbled', 'cut']);
+        const DEMO_VULGAR = { '¼': .25, '½': .5, '¾': .75, '⅓': 1 / 3, '⅔': 2 / 3, '⅛': .125 };
+
+        function demoUnitTable(u) {
+            if (DEMO_VOLUME[u]) return [DEMO_VOLUME, 'volume'];
+            if (DEMO_MASS[u]) return [DEMO_MASS, 'mass'];
+            if (DEMO_COUNT[u]) return [DEMO_COUNT, 'count'];
+            return [null, null];
+        }
+
+        function demoUnit(raw) {
+            if (!raw) return '';
+            if (String(raw).trim() === 'T') return 'tbsp';
+            let u = String(raw).trim().toLowerCase().replace(/[.\-\s]/g, '');
+            u = DEMO_UNIT_ALIASES[u] || u;
+            if (demoUnitTable(u)[0]) return u;
+            const singular = u.replace(/ies$/, 'y').replace(/(es|s)$/, '');
+            const mapped = DEMO_UNIT_ALIASES[singular] || singular;
+            return demoUnitTable(mapped)[0] ? mapped : '';
+        }
+
+        function demoCompatible(a, b) {
+            a = demoUnit(a) || 'each'; b = demoUnit(b) || 'each';
+            if (a === b) return true;
+            const da = demoUnitTable(a)[1], db = demoUnitTable(b)[1];
+            if (!da || da !== db) return false;
+            if (da === 'count') return a === 'each' || b === 'each';
+            return true;
+        }
+
+        function demoConvert(qty, from, to) {
+            if (qty == null || !demoCompatible(from, to)) return null;
+            const f = demoUnit(from) || 'each', t = demoUnit(to) || 'each';
+            return qty * demoUnitTable(f)[0][f] / demoUnitTable(t)[0][t];
+        }
+
+        function demoSingular(w) {
+            if (w.length <= 3) return w;
+            if (w.endsWith('ies')) return w.slice(0, -3) + 'y';
+            if (/(ches|shes|sses|xes|zes)$/.test(w)) return w.slice(0, -2);
+            if (w.endsWith('oes')) return w.slice(0, -2);
+            if (w.endsWith('s') && !/(ss|us|is)$/.test(w)) return w.slice(0, -1);
+            return w;
+        }
+
+        function demoKey(name) {
+            return String(name || '').toLowerCase()
+                .replace(/\([^)]*\)/g, ' ')
+                .replace(/\b(to taste|as needed|for serving|for garnish)\b/g, ' ')
+                .split(',')[0]
+                .replace(/[^a-z0-9\s%-]/g, ' ')
+                .split(/\s+/)
+                .filter(w => w && !DEMO_NOISE.has(w))
+                .map(demoSingular)
+                .join(' ')
+                .replace(/^(a|an|the|of)\s+/, '')
+                .trim();
+        }
+
+        function demoQty(text) {
+            let s = String(text || '').trim().replace(/^(a|an)\s+(?=[a-z])/i, '1 ');
+            const m = s.match(/^\s*(\d+\s+\d+\s*\/\s*\d+|\d+\s*\/\s*\d+|\d*\.\d+|\d+)\s*([¼½¾⅓⅔⅛])?/);
+            let qty = null, rest = s;
+            if (m) {
+                const raw = m[1].trim();
+                if (raw.includes('/')) {
+                    const bits = raw.split(/\s+/);
+                    const frac = bits[bits.length - 1].split('/');
+                    qty = (bits.length > 1 ? parseFloat(bits[0]) : 0) + parseFloat(frac[0]) / parseFloat(frac[1]);
+                } else qty = parseFloat(raw);
+                if (m[2]) qty += DEMO_VULGAR[m[2]];
+                rest = s.slice(m[0].length);
+            } else {
+                const v = s.match(/^\s*([¼½¾⅓⅔⅛])/);
+                if (v) { qty = DEMO_VULGAR[v[1]]; rest = s.slice(v[0].length); }
+            }
+            // Ranges resolve to the upper bound, as on the Pi.
+            const range = rest.match(/^\s*(?:-|–|to|or)\s*(\d+(?:\.\d+)?)/i);
+            if (qty != null && range) {
+                qty = Math.max(qty, parseFloat(range[1]));
+                rest = rest.slice(range[0].length);
+            }
+            return [qty, rest.trim()];
+        }
+
+        function demoParse(line) {
+            const raw = String(line || '').trim();
+            let [qty, rest] = demoQty(raw);
+            rest = rest.replace(/^\s*\([^)]*\)\s*/, '').trim();
+            let unit = '';
+            const parts = rest.split(/\s+/);
+            if (parts.length > 1) {
+                const candidate = demoUnit(parts[0]);
+                if (candidate) { unit = candidate; rest = parts.slice(1).join(' '); }
+            }
+            rest = rest.replace(/^of\s+/i, '').trim();
+            if (qty != null && !unit) unit = 'each';
+            const name = rest.replace(/\([^)]*\)/g, '')
+                .replace(/,\s*(chopped|diced|minced|sliced|grated|optional|divided|to taste).*$/i, '')
+                .replace(/\b(to taste|as needed)\b/ig, '')
+                .replace(/\s{2,}/g, ' ').trim().replace(/,$/, '') || raw;
+            return { qty, unit, name, key: demoKey(name), raw,
+                     optional: /\boptional\b/i.test(raw) };
+        }
+
+        // Cooking amounts are never precise past 1/8, so a loose tolerance only
+        // helps: it absorbs the rounding unit conversion leaves behind.
+        const DEMO_FRACTION_TOLERANCE = 1e-4;
+
+        function demoFormatQty(q) {
+            if (q == null) return '';
+            if (Math.abs(q - Math.round(q)) < DEMO_FRACTION_TOLERANCE) return String(Math.round(q));
+            for (const d of [2, 3, 4, 8]) {
+                const scaled = q * d;
+                if (Math.abs(scaled - Math.round(scaled)) < DEMO_FRACTION_TOLERANCE) {
+                    const whole = Math.floor(Math.round(scaled) / d);
+                    const num = Math.round(scaled) - whole * d;
+                    return (whole ? whole + ' ' : '') + num + '/' + d;
+                }
+            }
+            return q.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
+        }
+
+        // Word units take a plural; abbreviations don't ("2 tbsp", not "2 tbsps").
+        const DEMO_PLURALS = { cup: 'cups', pint: 'pints', quart: 'quarts', gallon: 'gallons',
+            can: 'cans', jar: 'jars', bottle: 'bottles', package: 'packages', box: 'boxes',
+            bag: 'bags', bunch: 'bunches', clove: 'cloves', head: 'heads', stalk: 'stalks',
+            sprig: 'sprigs', slice: 'slices', loaf: 'loaves', stick: 'sticks',
+            pinch: 'pinches', dash: 'dashes' };
+
+        function demoAmount(q, u) {
+            let unit = demoUnit(u) === 'each' ? '' : (demoUnit(u) || '');
+            if (unit && q != null && Math.abs(q - 1) >= DEMO_FRACTION_TOLERANCE) {
+                unit = DEMO_PLURALS[unit] || unit;
+            }
+            const qty = demoFormatQty(q);
+            return [qty, unit].filter(Boolean).join(' ');
+        }
+
+        function demoAdd(qa, ua, qb, ub) {
+            if (qa == null) return qb == null ? [null, ua || ub] : [qb, ub];
+            if (qb == null) return [qa, ua];
+            if (!demoCompatible(ua, ub)) return [null, ua];
+            return [qa + demoConvert(qb, ub, ua), ua];
+        }
+
+        function demoCategory(name) {
+            const key = ' ' + demoKey(name) + ' ';
+            const has = words => words.some(w => key.includes(' ' + w));
+            if (has(['salt', 'black pepper', 'tomato paste', 'crushed tomato', 'chili powder'])) return 'pantry';
+            if (has(['ice cream', 'frozen'])) return 'frozen';
+            if (has(['milk', 'cream', 'butter', 'cheese', 'mozzarella', 'ricotta', 'parmesan',
+                     'feta', 'yogurt', 'egg', 'buttermilk'])) return 'dairy';
+            if (has(['chicken', 'beef', 'pork', 'turkey', 'bacon', 'sausage', 'steak',
+                     'salmon', 'shrimp', 'fish', 'ham'])) return 'meat';
+            if (has(['bread', 'tortilla', 'roll', 'bun', 'bagel', 'pita', 'crust'])) return 'bakery';
+            if (has(['lettuce', 'spinach', 'carrot', 'celery', 'onion', 'garlic', 'potato',
+                     'tomato', 'pepper', 'cucumber', 'mushroom', 'apple', 'banana', 'lemon',
+                     'lime', 'berry', 'strawberry', 'avocado', 'cilantro', 'parsley',
+                     'olive', 'pea', 'corn'])) return 'produce';
+            if (has(['flour', 'sugar', 'oil', 'vinegar', 'rice', 'pasta', 'ziti', 'quinoa',
+                     'bean', 'broth', 'stock', 'sauce', 'marinara', 'soda', 'seasoning',
+                     'spice', 'honey', 'syrup'])) return 'pantry';
+            return 'other';
+        }
+
+        // Pantry stock for one key, totalled in the unit the caller needs.
+        // Units that don't convert are skipped rather than guessed at, exactly
+        // as the Pi indexes them.
+        function demoStockIn(key, unit) {
+            const rows = demoStore.pantry.filter(p => (p.match_key || demoKey(p.name)) === key);
+            let total = null;
+            rows.forEach(r => {
+                const [q, rest] = demoQty(r.quantity || '');
+                if (q == null) return;
+                const u = demoUnit((rest || '').split(/\s+/)[0]) || 'each';
+                const converted = demoConvert(q, u, unit || 'each');
+                if (converted != null) total = (total || 0) + converted;
+            });
+            return total;
+        }
+
+        function demoStockLabel(key) {
+            const rows = demoStore.pantry.filter(p => (p.match_key || demoKey(p.name)) === key);
+            if (!rows.length) return '';
+            const groups = [];
+            rows.forEach(r => {
+                const [q, rest] = demoQty(r.quantity || '');
+                if (q == null) return;
+                const u = demoUnit((rest || '').split(/\s+/)[0]) || 'each';
+                const hit = groups.find(g => demoCompatible(g.u, u));
+                if (hit) hit.q += demoConvert(q, u, hit.u);
+                else groups.push({ q, u });
+            });
+            if (!groups.length) return 'in stock';
+            return groups.map(g => demoAmount(g.q, g.u)).join(' + ');
+        }
+
+        function demoMealIngredients(meal) {
+            const recipe = demoStore.recipes.find(r => r.id === meal.recipe_id);
+            if (!recipe || !recipe.ingredients) return [];
+            const parsed = recipe.ingredients.map(demoParse);
+            if (meal.servings && recipe.servings && meal.servings !== recipe.servings) {
+                const factor = meal.servings / recipe.servings;
+                parsed.forEach(p => { if (p.qty != null) p.qty *= factor; });
+            }
+            return parsed;
+        }
+
+        function demoCovers(key, qty, unit) {
+            const rows = demoStore.pantry.filter(p => (p.match_key || demoKey(p.name)) === key);
+            if (!rows.length) return { remaining: qty, unit, covered: false };
+            if (qty == null) return { remaining: null, unit, covered: true };
+            const have = demoStockIn(key, unit);
+            if (have == null) return { remaining: qty, unit, covered: false };
+            const remaining = qty - have;
+            return remaining <= 1e-9
+                ? { remaining: 0, unit, covered: true }
+                : { remaining, unit, covered: false };
         }
 
         let demoStore = null;
@@ -1106,9 +1661,58 @@
             if (method === 'GET') {
                 if (p === '/health') return json({ app: 'familydash', version: 'demo', hostname: 'Demo', location: 'Rochester, NY', calendars: 3, time: now });
                 if (p === '/recipes') return json(demoStore.recipes);
-                if (p === '/meals') return json(demoStore.meals);
-                if (p === '/grocery') return json(demoStore.grocery);
-                if (p === '/pantry') return json(demoStore.pantry);
+                if (p === '/meals') {
+                    const wantStock = params.get('with_availability');
+                    return json(demoStore.meals.map(m => {
+                        if (!wantStock || !m.recipe_id) return m;
+                        const items = demoMealIngredients(m);
+                        const have = items.filter(
+                            i => demoCovers(i.key, i.qty, i.unit).covered).length;
+                        return { ...m, total: items.length, have };
+                    }));
+                }
+                {
+                    const availability = p.match(/^\/meals\/(\d+)\/availability$/);
+                    if (availability) {
+                        const meal = demoStore.meals.find(m => m.id == availability[1]);
+                        const items = meal ? demoMealIngredients(meal) : [];
+                        const lines = items.map(i => {
+                            const cover = demoCovers(i.key, i.qty, i.unit);
+                            return {
+                                name: i.name, key: i.key, optional: i.optional,
+                                needed: demoAmount(i.qty, i.unit),
+                                in_pantry: demoStockLabel(i.key),
+                                have: cover.covered,
+                                short: cover.covered ? '' : demoAmount(cover.remaining, cover.unit),
+                            };
+                        });
+                        return json({
+                            meal_id: meal ? meal.id : null,
+                            recipe_name: meal ? meal.recipe_name : '',
+                            cooked_at: meal ? (meal.cooked_at || null) : null,
+                            total: lines.length,
+                            have: lines.filter(l => l.have).length,
+                            missing: lines.filter(l => !l.have),
+                            ingredients: lines,
+                        });
+                    }
+                }
+                if (p === '/grocery') return json(demoStore.grocery.map(g => {
+                    const key = g.match_key || demoKey(g.name);
+                    const label = demoStockLabel(key);
+                    return { ...g, match_key: key, in_pantry: !!label, pantry_amount: label };
+                }));
+                if (p === '/pantry') return json(demoStore.pantry.map(
+                    x => ({ ...x, match_key: x.match_key || demoKey(x.name) })));
+                if (p === '/photos') return json(demoStore.photos);
+                if (p === '/display') return json({
+                    config: demoStore.display, revision: demoStore.revision,
+                    screen_types: { calendar: 'Calendar & Weather', meals: 'Meal Plan',
+                                    grocery: 'Grocery List', recipes: 'Recipes & Pantry',
+                                    photos: 'Photos' },
+                    photos: demoStore.photos,
+                });
+                if (p === '/display/revision') return json({ revision: demoStore.revision });
                 if (p === '/calendar/calendars') return json(demoStore.calendars);
                 if (p === '/calendar/events') {
                     const s = new Date(params.get('start_date') || 0), e = new Date(params.get('end_date') || 8.64e15);
@@ -1127,7 +1731,229 @@
                 if (method === 'DELETE') demoStore.grocery = demoStore.grocery.filter(x => x.id != id);
                 else if (item) Object.assign(item, body);
             } else if (p === '/grocery' && method === 'POST') demoStore.grocery.push({ id: Date.now(), checked: false, ...body });
-            else if (p === '/grocery/clear-checked') demoStore.grocery = demoStore.grocery.filter(x => !x.checked);
+            else if (p === '/grocery/clear-checked') {
+                // Restock: bought items become pantry stock, merging where the
+                // units agree - the same rule the Pi applies.
+                const bought = demoStore.grocery.filter(x => x.checked);
+                const toPantry = body.to_pantry !== false;
+                const location = body.location || 'pantry';
+                const stocked = [];
+                if (toPantry) bought.forEach(item => {
+                    const key = item.match_key || demoKey(item.name);
+                    const [qty, rest] = demoQty(item.quantity || '');
+                    const unit = demoUnit((rest || '').split(/\s+/)[0]) || (qty != null ? 'each' : '');
+                    const existing = demoStore.pantry.find(x => (x.match_key || demoKey(x.name)) === key);
+                    if (existing) {
+                        const [eq, erest] = demoQty(existing.quantity || '');
+                        const eu = demoUnit((erest || '').split(/\s+/)[0]) || 'each';
+                        if (qty == null || eq == null || demoCompatible(eu, unit)) {
+                            const [total, tu] = demoAdd(eq, eu, qty, unit);
+                            existing.quantity = demoAmount(total, tu);
+                            stocked.push({ name: existing.name, quantity: existing.quantity, created: false });
+                            return;
+                        }
+                    }
+                    const row = { id: demoStore.nextId++, name: item.name,
+                                  quantity: demoAmount(qty, unit), category: item.category,
+                                  location, expiration_date: null, notes: '', match_key: key };
+                    demoStore.pantry.push(row);
+                    stocked.push({ name: row.name, quantity: row.quantity, created: true });
+                });
+                demoStore.grocery = demoStore.grocery.filter(x => !x.checked);
+                return json({
+                    message: bought.length
+                        ? (toPantry ? `${bought.length} item${bought.length === 1 ? '' : 's'} moved to the pantry`
+                                    : `${bought.length} item${bought.length === 1 ? '' : 's'} cleared`)
+                        : 'Nothing checked off',
+                    cleared: bought.length, stocked,
+                });
+            }
+            else if (p === '/grocery/generate') {
+                const usePantry = body.use_pantry !== false;
+                const includeOptional = body.include_optional !== false;
+                const start = body.start_date ? new Date(body.start_date) : null;
+                const end = body.end_date ? new Date(body.end_date) : null;
+                const inRange = m => {
+                    if (!start || !end) return true;
+                    const d = new Date(m.date + 'T00:00:00');
+                    return d >= new Date(start.toDateString()) && d <= new Date(end.toDateString());
+                };
+
+                const buckets = new Map();
+                demoStore.meals.filter(m => m.recipe_id && inRange(m)).forEach(meal => {
+                    demoMealIngredients(meal).forEach(item => {
+                        if (item.optional && !includeOptional) return;
+                        const hit = buckets.get(item.key);
+                        if (hit) {
+                            const [q, u] = demoAdd(hit.qty, hit.unit, item.qty, item.unit);
+                            hit.qty = q; hit.unit = u;
+                            if (item.name.length < hit.name.length) hit.name = item.name;
+                        } else {
+                            buckets.set(item.key, { key: item.key, name: item.name, qty: item.qty,
+                                                    unit: item.unit, recipe_id: meal.recipe_id,
+                                                    recipe_name: meal.recipe_name });
+                        }
+                    });
+                });
+
+                const added = [], merged = [], skipped = [];
+                buckets.forEach(entry => {
+                    let { qty, unit } = entry;
+                    if (usePantry) {
+                        const cover = demoCovers(entry.key, qty, unit);
+                        if (cover.covered) {
+                            skipped.push({ name: entry.name, reason: 'in pantry',
+                                           pantry_amount: demoStockLabel(entry.key) });
+                            return;
+                        }
+                        qty = cover.remaining; unit = cover.unit;
+                    }
+                    const row = demoStore.grocery.find(
+                        g => !g.checked && (g.match_key || demoKey(g.name)) === entry.key);
+                    if (row) {
+                        const [rq, rrest] = demoQty(row.quantity || '');
+                        const ru = demoUnit((rrest || '').split(/\s+/)[0]) || 'each';
+                        const before = row.quantity || '';
+                        const [total, tu] = demoAdd(rq, ru, qty, unit);
+                        row.quantity = demoAmount(total, tu);
+                        if (!row.recipe_id) { row.recipe_id = entry.recipe_id; row.recipe_name = entry.recipe_name; }
+                        merged.push({ name: row.name, from: before, to: row.quantity });
+                        return;
+                    }
+                    demoStore.grocery.push({
+                        id: demoStore.nextId++, name: entry.name,
+                        quantity: demoAmount(qty, unit), category: demoCategory(entry.name),
+                        checked: false, recipe_id: entry.recipe_id, recipe_name: entry.recipe_name,
+                        match_key: entry.key,
+                    });
+                    added.push({ name: entry.name });
+                });
+
+                const parts = [];
+                if (added.length) parts.push(`${added.length} item${added.length === 1 ? '' : 's'} added`);
+                if (merged.length) parts.push(`${merged.length} updated`);
+                if (skipped.length) parts.push(`${skipped.length} already in the pantry`);
+                return json({
+                    message: parts.join(', ') || 'Nothing to add — the list already covers these meals',
+                    added, merged, skipped, meals: demoStore.meals.filter(m => m.recipe_id && inRange(m)).length,
+                });
+            }
+            else if ((id = idFrom(/^\/meals\/(\d+)\/cook$/))) {
+                const meal = demoStore.meals.find(m => m.id == id);
+                if (!meal || !meal.recipe_id) return json({ error: 'This meal has no recipe to deduct from' }, 400);
+                if (meal.cooked_at && !body.force) {
+                    return json({ error: 'This meal is already marked cooked', cooked_at: meal.cooked_at }, 409);
+                }
+                const consumed = [], short = [];
+                demoMealIngredients(meal).forEach(item => {
+                    if (item.qty == null) return;
+                    let remaining = item.qty;
+                    let used = 0;
+                    const rows = demoStore.pantry
+                        .filter(x => (x.match_key || demoKey(x.name)) === item.key)
+                        .sort((a, b) => (a.expiration_date || '9999') < (b.expiration_date || '9999') ? -1 : 1);
+                    rows.forEach(row => {
+                        if (remaining <= 1e-9) return;
+                        const [rq, rrest] = demoQty(row.quantity || '');
+                        if (rq == null) return;
+                        const ru = demoUnit((rrest || '').split(/\s+/)[0]) || 'each';
+                        const available = demoConvert(rq, ru, item.unit);
+                        if (available == null) return;
+                        const take = Math.min(available, remaining);
+                        remaining -= take; used += take;
+                        const left = available - take;
+                        if (left <= 1e-9) row._drop = true;
+                        else row.quantity = demoAmount(demoConvert(left, item.unit, ru), ru);
+                    });
+                    demoStore.pantry = demoStore.pantry.filter(x => !x._drop);
+                    if (used) consumed.push({ name: item.name, used: demoAmount(used, item.unit) });
+                    if (remaining > 1e-9) short.push({ name: item.name, needed: demoAmount(remaining, item.unit) });
+                });
+                if (body.add_missing_to_grocery) short.forEach(m => {
+                    const key = demoKey(m.name);
+                    if (demoStore.grocery.some(g => !g.checked && (g.match_key || demoKey(g.name)) === key)) return;
+                    demoStore.grocery.push({ id: demoStore.nextId++, name: m.name, quantity: m.needed,
+                                             category: demoCategory(m.name), checked: false,
+                                             recipe_id: null, recipe_name: null, match_key: key });
+                });
+                meal.cooked_at = new Date().toISOString();
+                return json({
+                    message: `${meal.recipe_name} cooked — ${consumed.length} item(s) used from the pantry`
+                             + (short.length ? `, ${short.length} short` : ''),
+                    consumed, short, added_to_grocery: !!body.add_missing_to_grocery,
+                    cooked_at: meal.cooked_at,
+                });
+            }
+            else if ((id = idFrom(/^\/meals\/(\d+)\/uncook$/))) {
+                const meal = demoStore.meals.find(m => m.id == id);
+                if (meal) meal.cooked_at = null;
+                return json({ message: 'Meal marked not cooked' });
+            }
+            else if ((id = idFrom(/^\/pantry\/(\d+)\/to-grocery$/))) {
+                const item = demoStore.pantry.find(x => x.id == id);
+                if (!item) return json({ error: 'Not found' }, 404);
+                const key = item.match_key || demoKey(item.name);
+                if (demoStore.grocery.some(g => !g.checked && (g.match_key || demoKey(g.name)) === key)) {
+                    return json({ message: `${item.name} is already on the list`, created: false });
+                }
+                demoStore.grocery.push({ id: demoStore.nextId++, name: item.name, quantity: '',
+                                         category: item.category, checked: false, recipe_id: null,
+                                         recipe_name: null, match_key: key });
+                return json({ message: `${item.name} added to the grocery list`, created: true }, 201);
+            }
+            else if (p === '/display' && method === 'PUT') {
+                demoStore.display = { ...demoStore.display, ...body,
+                                      theme: { ...demoStore.display.theme, ...(body.theme || {}) },
+                                      screensaver: { ...demoStore.display.screensaver, ...(body.screensaver || {}) } };
+                demoStore.revision++;
+                return json({ message: 'Display updated', config: demoStore.display,
+                              revision: demoStore.revision });
+            }
+            else if (p === '/display/reset') {
+                demoStore.display = demoData().display;
+                demoStore.revision++;
+                return json({ message: 'Display reset to defaults', config: demoStore.display,
+                              revision: demoStore.revision });
+            }
+            else if (p === '/photos' && method === 'POST') {
+                // Read the picked files so the demo shows the user's own photos.
+                const files = (init.body instanceof FormData)
+                    ? init.body.getAll('files').filter(f => f && f.size) : [];
+                if (!files.length) return json({ error: 'No file uploaded' }, 400);
+                return Promise.all(files.map(file => new Promise(resolve => {
+                    const reader = new FileReader();
+                    reader.onload = () => resolve({
+                        id: demoStore.nextId++, url: reader.result, caption: '',
+                        filename: file.name, original_name: file.name,
+                        width: null, height: null, bytes: file.size,
+                        sort_order: demoStore.photos.length + 1,
+                    });
+                    reader.onerror = () => resolve(null);
+                    reader.readAsDataURL(file);
+                }))).then(rows => {
+                    const saved = rows.filter(Boolean);
+                    demoStore.photos.push(...saved);
+                    demoStore.revision++;
+                    return json({ message: `${saved.length} photo${saved.length === 1 ? '' : 's'} added`,
+                                  photos: saved, errors: [] }, 201);
+                });
+            }
+            else if ((id = idFrom(/^\/photos\/(\d+)$/))) {
+                if (method === 'DELETE') demoStore.photos = demoStore.photos.filter(x => x.id != id);
+                else {
+                    const photo = demoStore.photos.find(x => x.id == id);
+                    if (photo) Object.assign(photo, body);
+                }
+                demoStore.revision++;
+                return json({ message: 'ok (demo)' });
+            }
+            else if (p === '/photos/reorder') {
+                const order = body.ids || [];
+                demoStore.photos.sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+                demoStore.photos.forEach((x, i) => { x.sort_order = i; });
+                demoStore.revision++;
+                return json({ message: 'Order saved' });
+            }
             else if ((id = idFrom(/^\/pantry\/(\d+)$/)) && method === 'DELETE') demoStore.pantry = demoStore.pantry.filter(x => x.id != id);
             else if (p === '/pantry' && method === 'POST') demoStore.pantry.push({ id: Date.now(), ...body });
             else if ((id = idFrom(/^\/recipes\/(\d+)$/))) {
@@ -1267,8 +2093,15 @@
         // TAB SWITCHING
         // =============================================
 
+        // Tabs with no case in showAddModal(): the button would do nothing and
+        // on Display it sits on top of the settings.
+        const TABS_WITHOUT_ADD = ['meals', 'display'];
+
         function switchTab(tabName) {
             currentTab = tabName;
+
+            const fab = document.getElementById('add-fab');
+            if (fab) fab.style.display = TABS_WITHOUT_ADD.includes(tabName) ? 'none' : '';
             
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
@@ -1296,6 +2129,9 @@
                     break;
                 case 'calendars':
                     loadCalendars();
+                    break;
+                case 'display':
+                    loadDisplay();
                     break;
             }
         }
@@ -1481,14 +2317,22 @@
                     return;
                 }
                 
+                const checkedCount = items.filter(i => i.checked).length;
+                document.getElementById('grocery-clear-btn').textContent =
+                    checkedCount ? `Bought ${checkedCount} →  Pantry` : 'Clear ✓';
+
                 container.innerHTML = `
                     <ul class="item-list">
                         ${items.map(item => `
                             <li class="item">
                                 <div class="checkbox ${item.checked ? 'checked' : ''}" onclick="toggleGroceryItem(${item.id}, ${item.checked})"></div>
                                 <div class="item-content">
-                                    <div class="item-title" style="${item.checked ? 'text-decoration: line-through; opacity: 0.5;' : ''}">${item.name}</div>
-                                    <div class="item-meta">${item.quantity || ''} ${item.category ? '• ' + item.category : ''}</div>
+                                    <div class="item-title" style="${item.checked ? 'text-decoration: line-through; opacity: 0.5;' : ''}">${esc(item.name)}</div>
+                                    <div class="item-meta">
+                                        ${esc(item.quantity || '')}${item.category ? ' • ' + esc(item.category) : ''}
+                                        ${item.recipe_name ? ` • for ${esc(item.recipe_name)}` : ''}
+                                        ${item.in_pantry ? `<span class="pill pill-pantry" title="Already in your pantry">🏪 have ${esc(item.pantry_amount || '')}</span>` : ''}
+                                    </div>
                                 </div>
                                 <button class="btn btn-danger btn-icon" onclick="deleteGroceryItem(${item.id})">🗑️</button>
                             </li>
@@ -1545,34 +2389,454 @@
             }
         }
 
-        async function generateGroceryList() {
+        function openGenerateModal() {
             const today = new Date();
-            const weekLater = new Date(today.getTime() + 7 * 24 * 60 * 60 * 1000);
-            
+            const start = new Date(today); start.setDate(start.getDate() - today.getDay());
+            const end = new Date(start); end.setDate(start.getDate() + 6);
+            document.getElementById('generate-start').value = dateInputValue(start);
+            document.getElementById('generate-end').value = dateInputValue(end);
+            document.getElementById('generate-result').innerHTML = '';
+            openModal('generate-modal');
+        }
+
+        function dateInputValue(d) {
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        }
+
+        async function generateGroceryList(event) {
+            if (event) event.preventDefault();
+            const btn = document.getElementById('generate-submit');
+            const box = document.getElementById('generate-result');
+            const start = document.getElementById('generate-start').value;
+            const end = document.getElementById('generate-end').value;
+            if (!start || !end) { box.className = 'test-result error'; box.textContent = 'Pick both dates'; return; }
+
+            btn.disabled = true; btn.textContent = 'Working…';
             try {
-                await fetch(`${API_BASE}/grocery/generate`, {
+                const res = await fetch(`${API_BASE}/grocery/generate`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        start_date: today.toISOString(),
-                        end_date: weekLater.toISOString()
+                        start_date: start,
+                        end_date: end,
+                        use_pantry: document.getElementById('generate-use-pantry').checked,
+                        include_optional: document.getElementById('generate-optional').checked,
                     })
                 });
-                
+                const data = await res.json();
+                box.className = 'test-result ok';
+                box.innerHTML = `<strong>${esc(data.message)}</strong>`
+                    + (data.skipped && data.skipped.length
+                        ? `<div class="generate-detail">Skipped (already in the pantry): ${
+                            data.skipped.map(x => esc(x.name)).join(', ')}</div>` : '')
+                    + (data.merged && data.merged.length
+                        ? `<div class="generate-detail">Topped up: ${
+                            data.merged.map(x => `${esc(x.name)} ${esc(x.from)} → ${esc(x.to)}`).join(', ')}</div>` : '');
                 loadGroceryList();
             } catch (error) {
-                console.error('Error generating list:', error);
+                box.className = 'test-result error';
+                box.textContent = 'Could not reach the dashboard';
+            } finally {
+                btn.disabled = false; btn.textContent = 'Generate';
             }
         }
 
         async function clearChecked() {
-            if (!confirm('Remove all checked items?')) return;
-            
+            const items = await (await fetch(`${API_BASE}/grocery`)).json();
+            const checked = items.filter(i => i.checked);
+            if (!checked.length) { alert('Nothing is checked off yet.'); return; }
+
+            const toPantry = confirm(
+                `Move ${checked.length} bought item${checked.length === 1 ? '' : 's'} into the pantry?\n\n` +
+                'OK = stock the pantry.  Cancel = just clear the list.');
+
             try {
-                await fetch(`${API_BASE}/grocery/clear-checked`, { method: 'POST' });
+                const res = await fetch(`${API_BASE}/grocery/clear-checked`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ to_pantry: toPantry, location: 'pantry' })
+                });
+                const data = await res.json();
                 loadGroceryList();
+                if (data.stocked && data.stocked.length) {
+                    alert(`${data.message}:\n` +
+                          data.stocked.map(s => `• ${s.name} ${s.quantity}`).join('\n'));
+                }
             } catch (error) {
                 console.error('Error clearing items:', error);
+            }
+        }
+
+        // =============================================
+        // DISPLAY SETTINGS
+        // =============================================
+        // Edits are saved as you make them (debounced), and the kiosk picks
+        // them up within ~15s via its revision poll.
+
+        let displayConfig = null;
+        let displayPhotos = [];
+        let saveTimer = null;
+
+        const SCREEN_LABELS = {
+            calendar: '📅 Calendar & Weather',
+            meals: '🍽️ Meal Plan',
+            grocery: '🛒 Grocery List',
+            recipes: '👨‍🍳 Recipes & Pantry',
+            photos: '🖼️ Photos',
+        };
+
+        // Controls that just write a value: any change saves the whole config.
+        const DISPLAY_INPUTS = [
+            'display-rotation', 'display-24h', 'display-indicators',
+            'theme-primary', 'theme-secondary', 'theme-text', 'theme-accent',
+            'theme-font', 'theme-scale', 'theme-opacity',
+            'saver-enabled', 'saver-idle', 'saver-interval', 'saver-shuffle', 'saver-clock',
+        ];
+        let displayInputsBound = false;
+
+        function bindDisplayInputs() {
+            if (displayInputsBound) return;
+            displayInputsBound = true;
+            DISPLAY_INPUTS.forEach(id => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                // Sliders and colour wells fire 'input' continuously; the save is
+                // debounced so dragging one doesn't hammer the Pi.
+                el.addEventListener('input', queueDisplaySave);
+                el.addEventListener('change', queueDisplaySave);
+            });
+        }
+
+        async function loadDisplay() {
+            try {
+                const data = await (await fetch(`${API_BASE}/display`)).json();
+                displayConfig = data.config;
+                displayPhotos = data.photos || [];
+                renderDisplay();
+                bindDisplayInputs();
+            } catch (error) {
+                console.error('Error loading display settings:', error);
+            }
+        }
+
+        function renderDisplay() {
+            if (!displayConfig) return;
+            const c = displayConfig;
+
+            document.getElementById('screen-rows').innerHTML = c.screens.map((screen, i) => `
+                <div class="screen-row ${screen.enabled ? '' : 'is-off'}">
+                    <button class="order-btn" ${i === 0 ? 'disabled' : ''}
+                            onclick="moveScreen(${i}, -1)" title="Move up">↑</button>
+                    <button class="order-btn" ${i === c.screens.length - 1 ? 'disabled' : ''}
+                            onclick="moveScreen(${i}, 1)" title="Move down">↓</button>
+                    <span class="screen-name">${SCREEN_LABELS[screen.id] || screen.id}</span>
+                    <input type="number" class="screen-duration" min="5" max="3600"
+                           placeholder="${c.rotation_interval}s"
+                           value="${screen.duration || ''}"
+                           onchange="setScreenDuration('${screen.id}', this.value)"
+                           title="Seconds on screen">
+                    <label class="toggle-label" style="margin:0">
+                        <input type="checkbox" ${screen.enabled ? 'checked' : ''}
+                               onchange="setScreenEnabled('${screen.id}', this.checked)">
+                    </label>
+                </div>
+            `).join('');
+
+            document.getElementById('display-rotation').value = c.rotation_interval;
+            document.getElementById('display-24h').checked = !!c.clock_24h;
+            document.getElementById('display-indicators').checked = c.show_indicators !== false;
+
+            document.getElementById('theme-primary').value = c.theme.primary;
+            document.getElementById('theme-secondary').value = c.theme.secondary;
+            document.getElementById('theme-text').value = c.theme.text;
+            document.getElementById('theme-accent').value = c.theme.accent;
+            document.getElementById('theme-font').value = c.theme.font;
+            document.getElementById('theme-scale').value = c.theme.scale;
+            document.getElementById('theme-opacity').value = c.theme.card_opacity;
+
+            const saver = c.screensaver || {};
+            document.getElementById('saver-enabled').checked = !!saver.enabled;
+            document.getElementById('saver-idle').value = Math.round((saver.idle_seconds || 300) / 60);
+            document.getElementById('saver-interval').value = saver.interval || 8;
+            document.getElementById('saver-shuffle').checked = saver.shuffle !== false;
+            document.getElementById('saver-clock').checked = saver.show_clock !== false;
+
+            updateThemePreview();
+            renderPhotos();
+        }
+
+        function updateThemePreview() {
+            const preview = document.getElementById('theme-preview');
+            const primary = document.getElementById('theme-primary').value;
+            const secondary = document.getElementById('theme-secondary').value;
+            preview.style.background = `linear-gradient(135deg, ${primary} 0%, ${secondary} 100%)`;
+            preview.style.color = document.getElementById('theme-text').value;
+            preview.style.fontFamily = document.getElementById('theme-font').value;
+            document.getElementById('scale-label').textContent =
+                `${Math.round(document.getElementById('theme-scale').value * 100)}%`;
+            document.getElementById('opacity-label').textContent =
+                `${Math.round(document.getElementById('theme-opacity').value * 100)}%`;
+        }
+
+        function collectDisplay() {
+            const c = displayConfig;
+            return {
+                rotation_interval: parseInt(document.getElementById('display-rotation').value, 10) || 30,
+                clock_24h: document.getElementById('display-24h').checked,
+                show_indicators: document.getElementById('display-indicators').checked,
+                theme: {
+                    primary: document.getElementById('theme-primary').value,
+                    secondary: document.getElementById('theme-secondary').value,
+                    text: document.getElementById('theme-text').value,
+                    accent: document.getElementById('theme-accent').value,
+                    font: document.getElementById('theme-font').value,
+                    scale: parseFloat(document.getElementById('theme-scale').value),
+                    card_opacity: parseFloat(document.getElementById('theme-opacity').value),
+                },
+                screens: c.screens,
+                screensaver: {
+                    enabled: document.getElementById('saver-enabled').checked,
+                    idle_seconds: (parseInt(document.getElementById('saver-idle').value, 10) || 5) * 60,
+                    interval: parseInt(document.getElementById('saver-interval').value, 10) || 8,
+                    shuffle: document.getElementById('saver-shuffle').checked,
+                    show_clock: document.getElementById('saver-clock').checked,
+                },
+            };
+        }
+
+        function queueDisplaySave() {
+            updateThemePreview();
+            clearTimeout(saveTimer);
+            saveTimer = setTimeout(saveDisplay, 600);
+        }
+
+        async function saveDisplay() {
+            try {
+                const res = await fetch(`${API_BASE}/display`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(collectDisplay())
+                });
+                const data = await res.json();
+                displayConfig = data.config;
+                const flag = document.getElementById('display-saved');
+                flag.classList.add('show');
+                setTimeout(() => flag.classList.remove('show'), 1500);
+            } catch (error) {
+                console.error('Error saving display settings:', error);
+            }
+        }
+
+        function setScreenEnabled(id, enabled) {
+            const screen = displayConfig.screens.find(s => s.id === id);
+            if (screen) screen.enabled = enabled;
+            renderDisplay();
+            queueDisplaySave();
+        }
+
+        function setScreenDuration(id, value) {
+            const screen = displayConfig.screens.find(s => s.id === id);
+            if (screen) screen.duration = value ? parseInt(value, 10) : null;
+            queueDisplaySave();
+        }
+
+        function moveScreen(index, delta) {
+            const screens = displayConfig.screens;
+            const target = index + delta;
+            if (target < 0 || target >= screens.length) return;
+            [screens[index], screens[target]] = [screens[target], screens[index]];
+            renderDisplay();
+            queueDisplaySave();
+        }
+
+        async function resetDisplay() {
+            if (!confirm('Put the display back to its original look?')) return;
+            const data = await (await fetch(`${API_BASE}/display/reset`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
+            })).json();
+            displayConfig = data.config;
+            renderDisplay();
+        }
+
+        // ---- Photos ----
+
+        function renderPhotos() {
+            const grid = document.getElementById('photo-grid');
+            if (!displayPhotos.length) {
+                grid.innerHTML = '<div class="upload-hint">No photos yet.</div>';
+                return;
+            }
+            grid.innerHTML = displayPhotos.map(photo => `
+                <div class="photo-tile">
+                    <img src="${photoSrc(photo)}" alt="${esc(photo.caption || '')}" loading="lazy">
+                    <button class="photo-remove" title="Remove"
+                            onclick="deletePhoto(${photo.id})">✕</button>
+                    <input class="photo-cap" placeholder="Caption" value="${esc(photo.caption || '')}"
+                           onchange="setPhotoCaption(${photo.id}, this.value)">
+                </div>
+            `).join('');
+        }
+
+        function photoSrc(photo) {
+            // Photo URLs are server-relative; in the packaged app the page itself
+            // is loaded from the bundle, so they need the Pi's address prefixed.
+            if (/^(https?:|data:)/.test(photo.url)) return photo.url;
+            const base = API_BASE.replace(/\/api$/, '');
+            return base === DEMO_SERVER ? photo.url : base + photo.url;
+        }
+
+        async function uploadPhotos(input) {
+            const files = Array.from(input.files || []);
+            if (!files.length) return;
+            const status = document.getElementById('photo-status');
+            status.textContent = `Uploading ${files.length} photo${files.length === 1 ? '' : 's'}…`;
+
+            // Send a few at a time: phone photos are large and the server caps
+            // each request, so one batch of twenty would be rejected wholesale.
+            const BATCH = 4;
+            let added = 0;
+            const problems = [];
+
+            try {
+                for (let i = 0; i < files.length; i += BATCH) {
+                    const batch = files.slice(i, i + BATCH);
+                    status.textContent =
+                        `Uploading ${Math.min(i + batch.length, files.length)} of ${files.length}…`;
+                    const form = new FormData();
+                    batch.forEach(file => form.append('files', file));
+
+                    const res = await fetch(`${API_BASE}/photos`, { method: 'POST', body: form });
+                    // A rejected upload (413 in particular) answers with HTML,
+                    // so don't assume the body is JSON.
+                    let data = null;
+                    try { data = await res.json(); } catch (e) { /* not JSON */ }
+
+                    if (res.status === 413) {
+                        problems.push(`${batch.map(f => f.name).join(', ')}: too large to upload`);
+                    } else if (!res.ok) {
+                        problems.push((data && data.error) || `Upload failed (${res.status})`);
+                    } else {
+                        added += (data.photos || []).length;
+                        if (data.errors && data.errors.length) problems.push(...data.errors);
+                    }
+                }
+                status.textContent = added
+                    ? `${added} photo${added === 1 ? '' : 's'} added`
+                    : 'Nothing uploaded';
+                if (problems.length) alert(problems.join('\n'));
+                await refreshPhotos();
+            } catch (error) {
+                status.textContent = 'Could not reach the dashboard';
+            } finally {
+                input.value = '';
+                setTimeout(() => { status.textContent = ''; }, 4000);
+            }
+        }
+
+        async function refreshPhotos() {
+            displayPhotos = await (await fetch(`${API_BASE}/photos`)).json();
+            renderPhotos();
+        }
+
+        async function deletePhoto(id) {
+            if (!confirm('Remove this photo from the dashboard?')) return;
+            await fetch(`${API_BASE}/photos/${id}`, { method: 'DELETE' });
+            await refreshPhotos();
+        }
+
+        async function setPhotoCaption(id, caption) {
+            await fetch(`${API_BASE}/photos/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ caption })
+            });
+            const photo = displayPhotos.find(p => p.id === id);
+            if (photo) photo.caption = caption;
+        }
+
+        // =============================================
+        // COOKING: meals <-> pantry
+        // =============================================
+
+        function mealStockPill(meal) {
+            if (meal.total == null || !meal.total) return '';
+            const short = meal.total - meal.have;
+            const cls = short === 0 ? 'pill-ready' : (short <= 2 ? 'pill-warn' : 'pill-short');
+            const label = short === 0
+                ? 'all on hand'
+                : `${meal.have}/${meal.total} on hand`;
+            return `<span class="pill ${cls}">${label}</span>`;
+        }
+
+        async function showMealAvailability(mealId) {
+            try {
+                const data = await (await fetch(`${API_BASE}/meals/${mealId}/availability`)).json();
+                document.getElementById('availability-title').textContent =
+                    data.recipe_name || 'Ingredients';
+                document.getElementById('availability-summary').innerHTML =
+                    data.total
+                        ? `<strong>${data.have} of ${data.total}</strong> ingredients already in the pantry`
+                        : 'This recipe has no ingredients listed';
+                document.getElementById('availability-list').innerHTML = `
+                    <ul class="item-list">
+                        ${data.ingredients.map(row => `
+                            <li class="item ${row.have ? '' : 'item-missing'}">
+                                <div class="item-content">
+                                    <div class="item-title">${row.have ? '✅' : '🛒'} ${esc(row.name)}</div>
+                                    <div class="item-meta">
+                                        need ${esc(row.needed || 'some')}
+                                        ${row.in_pantry
+                                            ? ` • have ${esc(row.in_pantry)}${row.short ? ` • short ${esc(row.short)}` : ''}`
+                                            : ' • none in the pantry'}
+                                    </div>
+                                </div>
+                            </li>`).join('')}
+                    </ul>`;
+                document.getElementById('availability-cook-btn').onclick = () => {
+                    closeModal('availability-modal');
+                    cookMeal(mealId);
+                };
+                document.getElementById('availability-cook-btn').style.display =
+                    data.cooked_at ? 'none' : '';
+                openModal('availability-modal');
+            } catch (error) {
+                console.error('Error loading availability:', error);
+            }
+        }
+
+        async function cookMeal(mealId) {
+            if (!confirm('Mark this cooked and take the ingredients out of the pantry?')) return;
+            try {
+                const res = await fetch(`${API_BASE}/meals/${mealId}/cook`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ add_missing_to_grocery: true })
+                });
+                const data = await res.json();
+                if (!res.ok) { alert(data.error || 'Could not mark this cooked'); return; }
+                let message = data.message;
+                if (data.short && data.short.length) {
+                    message += '\n\nAdded to the grocery list:\n' +
+                        data.short.map(x => `• ${x.name} (${x.needed})`).join('\n');
+                }
+                alert(message);
+                loadMeals();
+            } catch (error) {
+                console.error('Error cooking meal:', error);
+            }
+        }
+
+        async function uncookMeal(mealId) {
+            try {
+                await fetch(`${API_BASE}/meals/${mealId}/uncook`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                });
+                loadMeals();
+            } catch (error) {
+                console.error('Error updating meal:', error);
             }
         }
 
@@ -1598,13 +2862,15 @@
                         ${items.map(item => `
                             <li class="item">
                                 <div class="item-content">
-                                    <div class="item-title">${item.name}</div>
+                                    <div class="item-title">${esc(item.name)}</div>
                                     <div class="item-meta">
-                                        ${item.quantity || ''} 
-                                        ${item.location ? '📍 ' + item.location : ''}
-                                        ${item.expiration_date ? '📅 ' + new Date(item.expiration_date).toLocaleDateString() : ''}
+                                        ${esc(item.quantity || '')}
+                                        ${item.location ? '📍 ' + esc(item.location) : ''}
+                                        ${item.expiration_date ? '📅 ' + new Date(item.expiration_date + 'T00:00:00').toLocaleDateString() : ''}
                                     </div>
                                 </div>
+                                <button class="btn btn-secondary btn-icon" title="Add to grocery list"
+                                        onclick="pantryToGrocery(${item.id})">🛒</button>
                                 <button class="btn btn-danger btn-icon" onclick="deletePantryItem(${item.id})">🗑️</button>
                             </li>
                         `).join('')}
@@ -1639,6 +2905,20 @@
             }
         }
 
+        async function pantryToGrocery(id) {
+            try {
+                const res = await fetch(`${API_BASE}/pantry/${id}/to-grocery`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                });
+                const data = await res.json();
+                alert(data.message);
+            } catch (error) {
+                console.error('Error adding to grocery list:', error);
+            }
+        }
+
         async function deletePantryItem(id) {
             if (!confirm('Delete this item?')) return;
             
@@ -1663,7 +2943,7 @@
                 const endOfWeek = new Date(startOfWeek);
                 endOfWeek.setDate(startOfWeek.getDate() + 6);
                 
-                const response = await fetch(`${API_BASE}/meals?start_date=${startOfWeek.toISOString()}&end_date=${endOfWeek.toISOString()}`);
+                const response = await fetch(`${API_BASE}/meals?with_availability=1&start_date=${startOfWeek.toISOString()}&end_date=${endOfWeek.toISOString()}`);
                 const meals = await response.json();
                 
                 // Render simple list view for mobile
@@ -1690,9 +2970,23 @@
                             ${dayMeals.map(meal => `
                                 <li class="item">
                                     <div class="item-content">
-                                        <div class="item-title">${meal.recipe_name || 'No meal planned'}</div>
-                                        <div class="item-meta">${meal.meal_type}</div>
+                                        <div class="item-title" style="${meal.cooked_at ? 'opacity:0.55' : ''}">
+                                            ${esc(meal.recipe_name || 'No meal planned')}
+                                        </div>
+                                        <div class="item-meta">
+                                            ${esc(meal.meal_type)}
+                                            ${mealStockPill(meal)}
+                                            ${meal.cooked_at ? '<span class="pill pill-done">✓ cooked</span>' : ''}
+                                        </div>
                                     </div>
+                                    ${meal.recipe_id ? `
+                                        <button class="btn btn-secondary btn-icon" title="What do I need?"
+                                                onclick="showMealAvailability(${meal.id})">🧾</button>
+                                        <button class="btn ${meal.cooked_at ? 'btn-secondary' : 'btn-primary'} btn-icon"
+                                                title="${meal.cooked_at ? 'Mark not cooked' : 'Cooked it — take from the pantry'}"
+                                                onclick="${meal.cooked_at ? `uncookMeal(${meal.id})` : `cookMeal(${meal.id})`}">
+                                            ${meal.cooked_at ? '↩️' : '🍳'}
+                                        </button>` : ''}
                                 </li>
                             `).join('')}
                         </ul>

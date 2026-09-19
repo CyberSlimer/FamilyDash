@@ -192,7 +192,7 @@ class RestockTests(InventoryTestCase):
         self.assertEqual(self.grocery(), [])
         pantry_row = self.by_name(self.pantry(), 'milk')
         self.assertIsNotNone(pantry_row)
-        self.assertEqual(pantry_row['quantity'], '2 cup')
+        self.assertEqual(pantry_row['quantity'], '2 cups')
 
     def test_restock_merges_with_existing_stock(self):
         self.stock('milk', '1 cup')
@@ -366,7 +366,7 @@ class RowNormalizationTests(InventoryTestCase):
         self.client.post('/api/grocery', json={'name': 'milk', 'quantity': '2 cup'})
         row = self.grocery()[0]
         self.client.put(f"/api/grocery/{row['id']}", json={'checked': True})
-        self.assertEqual(self.grocery()[0]['quantity'], '2 cup')
+        self.assertEqual(self.grocery()[0]['quantity'], '2 cups')
 
 
 class MigrationTests(InventoryTestCase):

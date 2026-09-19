@@ -82,8 +82,45 @@ class FormatTests(unittest.TestCase):
 
     def test_amount_hides_the_generic_unit(self):
         self.assertEqual(ing.format_amount(3, 'each'), '3')
-        self.assertEqual(ing.format_amount(2, 'cup'), '2 cup')
         self.assertEqual(ing.format_amount(None, ''), '')
+
+    def test_word_units_are_pluralised(self):
+        self.assertEqual(ing.format_amount(2, 'cup'), '2 cups')
+        self.assertEqual(ing.format_amount(1, 'cup'), '1 cup')
+        self.assertEqual(ing.format_amount(3, 'clove'), '3 cloves')
+        self.assertEqual(ing.format_amount(2, 'loaf'), '2 loaves')
+        self.assertEqual(ing.format_amount(2, 'bunch'), '2 bunches')
+
+    def test_abbreviations_are_not_pluralised(self):
+        self.assertEqual(ing.format_amount(2, 'tbsp'), '2 tbsp')
+        self.assertEqual(ing.format_amount(2, 'lb'), '2 lb')
+        self.assertEqual(ing.format_amount(15, 'oz'), '15 oz')
+
+    def test_fractions_below_one_stay_singular(self):
+        self.assertEqual(ing.format_amount(0.5, 'cup'), '1/2 cups')
+
+
+class UnitPrecisionTests(unittest.TestCase):
+    """Rounded unit factors used to break clean fractions; keep them exact."""
+
+    def test_customary_volumes_are_exact_multiples(self):
+        self.assertEqual(ing.convert(1, 'quart', 'cup'), 4.0)
+        self.assertEqual(ing.convert(1, 'gallon', 'cup'), 16.0)
+        self.assertEqual(ing.convert(1, 'cup', 'tbsp'), 16.0)
+        self.assertEqual(ing.convert(1, 'tbsp', 'tsp'), 3.0)
+        self.assertEqual(ing.convert(1, 'pint', 'cup'), 2.0)
+
+    def test_pound_is_exactly_sixteen_ounces(self):
+        self.assertEqual(ing.convert(1, 'lb', 'oz'), 16.0)
+
+    def test_converted_totals_still_print_as_fractions(self):
+        # "2 cups + 1 quart" printed as "1.5 quart" when the factors were rounded.
+        self.assertEqual(ing.format_amount(*ing.add_amounts(1, 'quart', 2, 'cup')),
+                         '1 1/2 quarts')
+        self.assertEqual(ing.format_amount(*ing.add_amounts(1, 'lb', 8, 'oz')),
+                         '1 1/2 lb')
+        self.assertEqual(ing.format_amount(*ing.add_amounts(1, 'cup', 8, 'tbsp')),
+                         '1 1/2 cups')
 
 
 class NormalizeTests(unittest.TestCase):
