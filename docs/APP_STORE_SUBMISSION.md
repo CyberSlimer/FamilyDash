@@ -20,6 +20,7 @@ Everything below covers both; B-only items are marked.
 - ✔ Xcode project with bundle id, icons, launch screen, permissions (`app/ios/`).
 - ✔ `ITSAppUsesNonExemptEncryption = NO` in Info.plist (skips the export-compliance question on every upload).
 - ✔ Demo mode (`demo` as server) so the app works with no Pi — for screenshots and for App Review.
+- ✔ NSCameraUsageDescription / NSPhotoLibraryUsageDescription for the Display tab's photo upload.
 - ✔ Privacy policy: [`docs/PRIVACY.md`](PRIVACY.md).
 - ☐ Sign in to Xcode → Settings → Accounts with your Apple ID on the Mac.
 - ☐ Decide iPhone-only vs iPhone+iPad (see §4). Default in the project is both.
@@ -112,7 +113,9 @@ First release.
 ```
 FamilyDash is a companion app for a self-hosted home dashboard server (open source: https://github.com/CyberSlimer/FamilyDash). In normal use it connects to a Raspberry Pi on the user's own Wi-Fi, which is not reachable from outside the home.
 
-TO TEST WITHOUT A SERVER: on the first screen ("Dashboard Server"), type   demo   in the address field (or tap "Try the demo") and press Connect. The app then runs fully on built-in sample data — every tab (Recipes, Meals, Grocery, Pantry, Calendars) works, including adding and deleting items, testing a calendar feed, and the settings screen via the gear icon.
+TO TEST WITHOUT A SERVER: on the first screen ("Dashboard Server"), type   demo   in the address field (or tap "Try the demo") and press Connect. The app then runs fully on built-in sample data — every tab (Recipes, Meals, Grocery, Pantry, Calendars, Display) works, including adding and deleting items, generating a shopping list from the meal plan, marking a meal cooked, testing a calendar feed, changing the dashboard's appearance, and the settings screen via the gear icon.
+
+PHOTOS: the Display tab can add photos that appear on the user's own dashboard screen at home. On a real server the photo is uploaded to that machine and nowhere else. In demo mode nothing is uploaded — a picked photo is read on the device only, to preview it. The camera and photo-library permission prompts appear only if you choose to add a photo.
 
 The Local Network permission prompt appears only when connecting to a real server; it is not triggered in demo mode. No account, login, or purchase exists anywhere in the app.
 ```

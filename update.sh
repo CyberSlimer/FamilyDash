@@ -15,11 +15,20 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-# Backup database before updating
+# Backup database (and uploaded photos) before updating
 echo -e "${YELLOW}Creating backup...${NC}"
-BACKUP_FILE="$HOME/dashboard-backup-$(date +%Y%m%d-%H%M%S).db"
+STAMP=$(date +%Y%m%d-%H%M%S)
+BACKUP_FILE="$HOME/dashboard-backup-$STAMP.db"
 cp $HOME/family-dashboard/backend/dashboard.db "$BACKUP_FILE"
 echo "Backup created: $BACKUP_FILE"
+
+# Photos live outside the database and are not in git, so they need their own copy.
+if [ -d "$HOME/family-dashboard/backend/photos" ] && \
+   [ -n "$(ls -A $HOME/family-dashboard/backend/photos 2>/dev/null)" ]; then
+    PHOTO_BACKUP="$HOME/dashboard-photos-$STAMP.tar.gz"
+    tar -czf "$PHOTO_BACKUP" -C $HOME/family-dashboard/backend photos
+    echo "Photos backed up: $PHOTO_BACKUP"
+fi
 echo ""
 
 # Stop services
@@ -46,14 +55,13 @@ cd $HOME/family-dashboard/backend
 pip3 install -r requirements.txt --upgrade --break-system-packages
 echo ""
 
-# Run database migrations (if any)
+# Run database migrations
+# init_db() creates missing tables, adds columns introduced since this Pi was
+# installed, backfills existing rows, and seeds new default settings.
+# db.create_all() alone would NOT add the new columns to existing tables.
 echo -e "${YELLOW}Checking database...${NC}"
-python3 << 'EOF'
-from app import app, db
-with app.app_context():
-    db.create_all()
-    print("Database schema updated")
-EOF
+python3 -c "from app import init_db; init_db()"
+echo "Database schema updated"
 echo ""
 
 # Update systemd services if changed

@@ -38,6 +38,14 @@
 	<array>
 		<string>_http._tcp</string>
 	</array>
+	<!-- The Display tab uploads photos to the Pi through a web file input. iOS
+	     offers "Photo Library", "Take Photo" and "Choose File"; the camera path
+	     terminates the app without a usage string, so both are declared. Photos
+	     go only to the dashboard server the user configured. -->
+	<key>NSCameraUsageDescription</key>
+	<string>Take a photo to show on your Family Dashboard. Photos are sent only to your own Raspberry Pi.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Choose photos to show on your Family Dashboard. Photos are sent only to your own Raspberry Pi.</string>
 	<!-- Only standard HTTPS/TLS is used; no custom encryption, so no export docs are needed. -->
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
