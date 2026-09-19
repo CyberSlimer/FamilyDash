@@ -14,10 +14,12 @@ import requests
 from bs4 import BeautifulSoup
 import json
 import re
+import uuid
 from urllib.parse import urlparse
 
 from calendar_sync import (CalendarSync, DEFAULT_COLORS, read_raw_config,
                            write_raw_config, test_calendar)
+import ingredients as ing
 
 # Paths
 basedir = os.path.abspath(os.path.dirname(__file__))
@@ -42,13 +44,17 @@ app = Flask(__name__, static_folder=os.path.join(project_root, 'frontend'), stat
 CORS(app)
 
 # Configuration
-app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{os.path.join(basedir, "dashboard.db")}'
+# DASHBOARD_DB overrides the database location (used by the test suite; also
+# handy for putting the db on external storage).
+_db_path = os.environ.get('DASHBOARD_DB') or os.path.join(basedir, 'dashboard.db')
+app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{_db_path}'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'family-dashboard-secret-key-change-in-production')
 
 LOCATION_NAME = os.environ.get('LOCATION_NAME', 'Rochester, NY').strip('"')
 LOCATION_LAT = float(os.environ.get('LOCATION_LAT', 43.1566))
 LOCATION_LON = float(os.environ.get('LOCATION_LON', -77.6088))
+EXPIRATION_WARNING_DAYS = int(os.environ.get('EXPIRATION_WARNING_DAYS', 7))
 
 db = SQLAlchemy(app)
 
@@ -90,13 +96,18 @@ class MealPlan(db.Model):
     recipe = db.relationship('Recipe', backref='meal_plans')
     custom_meal = db.Column(db.String(200))  # for non-recipe meals
     notes = db.Column(db.Text)
+    servings = db.Column(db.Integer)         # overrides the recipe's own yield
+    cooked_at = db.Column(db.DateTime)       # set when the meal deducted from the pantry
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 class GroceryItem(db.Model):
     """Grocery shopping list"""
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(200), nullable=False)
-    quantity = db.Column(db.String(50))
+    quantity = db.Column(db.String(50))          # display text, e.g. "1 1/2 cup"
+    qty = db.Column(db.Float)                    # parsed amount, None = unquantified
+    unit = db.Column(db.String(20))              # canonical unit for qty
+    match_key = db.Column(db.String(200), index=True)  # normalized name, links the lists
     category = db.Column(db.String(50))  # produce, dairy, meat, etc.
     checked = db.Column(db.Boolean, default=False)
     recipe_id = db.Column(db.Integer, db.ForeignKey('recipe.id'))
@@ -108,7 +119,10 @@ class PantryItem(db.Model):
     """Pantry inventory tracking"""
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(200), nullable=False)
-    quantity = db.Column(db.String(50))
+    quantity = db.Column(db.String(50))          # display text, e.g. "2 lb"
+    qty = db.Column(db.Float)                    # parsed amount
+    unit = db.Column(db.String(20))              # canonical unit
+    match_key = db.Column(db.String(200), index=True)  # links to recipes/grocery
     category = db.Column(db.String(50))
     expiration_date = db.Column(db.Date)
     location = db.Column(db.String(100))  # pantry, fridge, freezer
@@ -116,12 +130,288 @@ class PantryItem(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+class Photo(db.Model):
+    """An image uploaded from the app for the kiosk slideshow."""
+    id = db.Column(db.Integer, primary_key=True)
+    filename = db.Column(db.String(255), nullable=False)   # stored name under photos/
+    original_name = db.Column(db.String(255))
+    caption = db.Column(db.String(200))
+    width = db.Column(db.Integer)
+    height = db.Column(db.Integer)
+    bytes = db.Column(db.Integer)
+    sort_order = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
 class Settings(db.Model):
     """System settings"""
     id = db.Column(db.Integer, primary_key=True)
     key = db.Column(db.String(100), unique=True, nullable=False)
     value = db.Column(db.Text)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+# ============================================================================
+# INVENTORY HELPERS
+# ============================================================================
+# Recipes, the grocery list and the pantry are all the same thing seen from
+# three angles: an amount of a named item. `match_key` (ingredients.normalize_name)
+# is what lets a row in one list find its counterpart in another.
+
+GROCERY_CATEGORIES = [c.strip() for c in os.environ.get(
+    'GROCERY_CATEGORIES', 'produce,dairy,meat,bakery,pantry,frozen,other').split(',') if c.strip()]
+PANTRY_LOCATIONS = [c.strip() for c in os.environ.get(
+    'PANTRY_LOCATIONS', 'pantry,fridge,freezer').split(',') if c.strip()]
+
+
+def _amount_from_text(text, name=''):
+    """
+    Read a stored quantity string ("2 lb", "6 cans", "1 gal") into (qty, unit).
+
+    Falls back to parsing the whole 'name' when the quantity column is empty,
+    so hand-typed rows like "2 lb ground beef" still get a number.
+    """
+    qty, rest = ing.parse_quantity(text or '')
+    unit = ''
+    if rest:
+        unit = ing.canonical_unit(rest.split()[0])
+    if qty is None and not unit and name:
+        parsed = ing.parse(name)
+        return parsed.qty, parsed.unit
+    if qty is not None and not unit:
+        unit = 'each'
+    return qty, unit
+
+
+def _set_amount(item, qty, unit):
+    """Write a numeric amount onto a grocery/pantry row, keeping display text in sync."""
+    item.qty = qty
+    item.unit = ing.canonical_unit(unit) or (unit or '')
+    item.quantity = ing.format_amount(qty, item.unit)
+    return item
+
+
+def _sync_row(item, name=None, quantity=None, category=None):
+    """
+    Normalize a grocery/pantry row after a create or edit.
+
+    Accepts whatever the client sent (a name that may embed its own amount, a
+    free-text quantity) and derives match_key, qty, unit and category from it.
+    """
+    if name is not None:
+        item.name = name
+    parsed = ing.parse(item.name or '')
+    # A name like "2 lb ground beef" carries its own amount; lift it out so the
+    # list shows "ground beef" with quantity "2 lb".
+    if parsed.qty is not None and not (quantity or '').strip():
+        item.name = parsed.name or item.name
+        _set_amount(item, parsed.qty, parsed.unit)
+    elif quantity is not None:
+        qty, unit = _amount_from_text(quantity, item.name)
+        if qty is None and (quantity or '').strip():
+            # Unparseable but meaningful ("a few", "2 boxes-ish") - keep the text.
+            item.qty, item.unit, item.quantity = None, '', quantity.strip()
+        else:
+            _set_amount(item, qty, unit)
+    item.match_key = ing.normalize_name(item.name)
+    if category:
+        item.category = category
+    elif not item.category or item.category in ('generated', '', 'other'):
+        item.category = ing.guess_category(item.name)
+    return item
+
+
+def _serialize_grocery(item, pantry_index=None):
+    data = {
+        'id': item.id,
+        'name': item.name,
+        'quantity': item.quantity or '',
+        'qty': item.qty,
+        'unit': item.unit or '',
+        'category': item.category,
+        'checked': bool(item.checked),
+        'recipe_id': item.recipe_id,
+        'recipe_name': item.recipe.name if item.recipe else None,
+        'match_key': item.match_key,
+    }
+    if pantry_index is not None:
+        stock = pantry_index.get(item.match_key)
+        data['in_pantry'] = bool(stock)
+        data['pantry_amount'] = _stock_display(stock)
+    return data
+
+
+def _serialize_pantry(item):
+    return {
+        'id': item.id,
+        'name': item.name,
+        'quantity': item.quantity or '',
+        'qty': item.qty,
+        'unit': item.unit or '',
+        'category': item.category,
+        'expiration_date': item.expiration_date.isoformat() if item.expiration_date else None,
+        'location': item.location,
+        'notes': item.notes,
+        'match_key': item.match_key,
+    }
+
+
+def _pantry_index(items=None):
+    """
+    Stock per match_key: {key: {'amounts': [(qty, unit), ...], 'items': [PantryItem]}}.
+
+    Amounts are kept as a list rather than one total because a pantry can
+    legitimately hold the same item in units that don't add up - an unopened
+    16 oz bottle of olive oil and 4 tbsp left in another. Collapsing those to a
+    single number would either invent a figure or throw the stock away, and the
+    second is what made a well-stocked item read as missing. Callers ask for a
+    total in the unit they care about via _stock_in_unit().
+    """
+    index = {}
+    for item in (items if items is not None else PantryItem.query.all()):
+        key = item.match_key or ing.normalize_name(item.name)
+        if not key:
+            continue
+        entry = index.setdefault(key, {'amounts': [], 'items': []})
+        entry['amounts'].append((item.qty, item.unit or ''))
+        entry['items'].append(item)
+    return index
+
+
+def _stock_in_unit(entry, unit):
+    """
+    How much of this item the pantry holds, expressed in `unit`.
+
+    Returns None when no row can be converted into that unit (incompatible
+    dimensions, or stock recorded without a number).
+    """
+    if not entry:
+        return None
+    total = None
+    for qty, row_unit in entry['amounts']:
+        if qty is None:
+            continue
+        converted = ing.convert(qty, row_unit or 'each', unit or 'each')
+        if converted is None:
+            continue
+        total = converted if total is None else total + converted
+    return total
+
+
+def _stock_display(entry):
+    """Readable total for the UI: '2 lb', or '16 oz + 4 tbsp' when units differ."""
+    if not entry:
+        return ''
+    groups = []                         # [(qty, unit)] one per compatible family
+    unquantified = False
+    for qty, unit in entry['amounts']:
+        if qty is None:
+            unquantified = True
+            continue
+        for i, (gq, gu) in enumerate(groups):
+            if ing.compatible(gu, unit or 'each'):
+                converted = ing.convert(qty, unit or 'each', gu)
+                if converted is not None:
+                    groups[i] = (gq + converted, gu)
+                    break
+        else:
+            groups.append((qty, ing.canonical_unit(unit) or 'each'))
+    parts = [ing.format_amount(q, u) for q, u in groups]
+    if not parts and unquantified:
+        return 'in stock'
+    return ' + '.join(p for p in parts if p)
+
+
+def _covers(entry, needed_qty, needed_unit):
+    """Does pantry stock satisfy this requirement? -> (remaining, unit, covered)."""
+    if not entry:
+        return needed_qty, needed_unit, False
+    if needed_qty is None:
+        # Unquantified need ('salt to taste') is covered if we have the item.
+        return None, needed_unit, True
+    have = _stock_in_unit(entry, needed_unit)
+    return ing.subtract_amounts(needed_qty, needed_unit, have, needed_unit)
+
+
+def _deduct_from_pantry(entry, qty, unit):
+    """
+    Consume an amount from the pantry rows behind one match_key.
+
+    Rows are drained oldest-expiring first; a row that hits zero is deleted.
+    Returns (consumed_display, shortfall_qty, shortfall_unit).
+    """
+    rows = sorted(entry['items'], key=lambda i: (i.expiration_date is None, i.expiration_date))
+    if qty is None:
+        # Unquantified need ("salt to taste") - take nothing, it's a staple.
+        return '', None, ''
+
+    remaining = qty
+    consumed = 0.0
+    for row in rows:
+        if remaining <= 1e-9:
+            break
+        if row.qty is None:
+            continue
+        available = ing.convert(row.qty, row.unit or 'each', unit)
+        if available is None:
+            continue                       # incompatible unit, leave this row alone
+        take = min(available, remaining)
+        remaining -= take
+        consumed += take
+        left = available - take
+        if left <= 1e-9:
+            db.session.delete(row)
+        else:
+            _set_amount(row, ing.convert(left, unit, row.unit or 'each'), row.unit or 'each')
+    shortfall = remaining if remaining > 1e-9 else None
+    return ing.format_amount(consumed, unit) if consumed else '', shortfall, unit
+
+
+def _add_to_pantry(key, name, qty, unit, category=None, location='pantry', expiration_date=None):
+    """
+    Put an amount into the pantry, merging into an existing row when the units
+    agree. Returns (PantryItem, created).
+    """
+    key = key or ing.normalize_name(name)
+    existing = (PantryItem.query.filter_by(match_key=key, location=location).first()
+                or PantryItem.query.filter_by(match_key=key).first())
+    if existing and (qty is None or existing.qty is None or ing.compatible(existing.unit or 'each', unit or 'each')):
+        total, total_unit = ing.add_amounts(existing.qty, existing.unit or '', qty, unit or '')
+        _set_amount(existing, total, total_unit)
+        if expiration_date:
+            existing.expiration_date = expiration_date
+        existing.updated_at = datetime.utcnow()
+        return existing, False
+
+    item = PantryItem(
+        name=name,
+        category=category or ing.guess_category(name),
+        location=location,
+        expiration_date=expiration_date,
+        notes='',
+    )
+    _set_amount(item, qty, unit)
+    item.match_key = key
+    db.session.add(item)
+    return item, True
+
+
+def _meal_ingredients(meal):
+    """Parsed ingredients for one planned meal, scaled if servings were overridden."""
+    if not meal.recipe or not meal.recipe.ingredients:
+        return []
+    try:
+        lines = json.loads(meal.recipe.ingredients)
+    except (ValueError, TypeError):
+        return []
+    parsed = ing.parse_all(lines)
+    base = meal.recipe.servings or 0
+    want = meal.servings or 0
+    if base and want and base != want:
+        factor = want / float(base)
+        for item in parsed:
+            if item.qty is not None:
+                item.qty *= factor
+    return parsed
 
 # ============================================================================
 # RECIPE ENDPOINTS
@@ -352,7 +642,23 @@ def meals():
             query = query.filter(MealPlan.date <= datetime.fromisoformat(end_date).date())
         
         meals = query.order_by(MealPlan.date, MealPlan.meal_type).all()
-        
+
+        # Ingredient coverage per meal, so the planner can show "4/6 on hand"
+        # without a round-trip per row.
+        index = _pantry_index() if request.args.get('with_availability') else None
+
+        def coverage(m):
+            if index is None:
+                return {}
+            items = _meal_ingredients(m)
+            if not items:
+                return {'total': 0, 'have': 0}
+            have = 0
+            for item in items:
+                _, _, covered = _covers(index.get(item.key), item.qty, item.unit)
+                have += 1 if covered else 0
+            return {'total': len(items), 'have': have}
+
         return jsonify([{
             'id': m.id,
             'date': m.date.isoformat(),
@@ -361,6 +667,9 @@ def meals():
             'recipe_name': m.recipe.name if m.recipe else m.custom_meal,
             'custom_meal': m.custom_meal,
             'notes': m.notes,
+            'servings': m.servings,
+            'cooked_at': m.cooked_at.isoformat() if m.cooked_at else None,
+            **coverage(m),
         } for m in meals])
     
     elif request.method == 'POST':
@@ -371,7 +680,8 @@ def meals():
             meal_type=data['meal_type'],
             recipe_id=data.get('recipe_id'),
             custom_meal=data.get('custom_meal'),
-            notes=data.get('notes', '')
+            notes=data.get('notes', ''),
+            servings=data.get('servings'),
         )
         
         db.session.add(meal)
@@ -391,6 +701,7 @@ def meal_detail(meal_id):
         meal.recipe_id = data.get('recipe_id', meal.recipe_id)
         meal.custom_meal = data.get('custom_meal', meal.custom_meal)
         meal.notes = data.get('notes', meal.notes)
+        meal.servings = data.get('servings', meal.servings)
         
         db.session.commit()
         
@@ -402,6 +713,113 @@ def meal_detail(meal_id):
         
         return jsonify({'message': 'Meal deleted'})
 
+@app.route('/api/meals/<int:meal_id>/availability', methods=['GET'])
+def meal_availability(meal_id):
+    """
+    What this meal needs versus what the pantry holds.
+
+    Powers the "4 of 6 ingredients on hand" badge and tells you what to buy
+    before cooking.
+    """
+    meal = MealPlan.query.get_or_404(meal_id)
+    pantry = _pantry_index()
+
+    lines = []
+    have = 0
+    for item in _meal_ingredients(meal):
+        stock = pantry.get(item.key)
+        remaining, unit, covered = _covers(stock, item.qty, item.unit)
+        if covered:
+            have += 1
+        lines.append({
+            'name': item.name,
+            'needed': ing.format_amount(item.qty, item.unit),
+            'in_pantry': _stock_display(stock),
+            'have': covered,
+            'short': ing.format_amount(remaining, unit) if not covered and remaining else '',
+            'optional': item.optional,
+            'key': item.key,
+        })
+
+    return jsonify({
+        'meal_id': meal.id,
+        'recipe_name': meal.recipe.name if meal.recipe else meal.custom_meal,
+        'cooked_at': meal.cooked_at.isoformat() if meal.cooked_at else None,
+        'total': len(lines),
+        'have': have,
+        'missing': [l for l in lines if not l['have']],
+        'ingredients': lines,
+    })
+
+
+@app.route('/api/meals/<int:meal_id>/cook', methods=['POST'])
+def cook_meal(meal_id):
+    """
+    Mark a meal cooked and take its ingredients out of the pantry.
+
+    Deducts oldest-expiring stock first. Anything the pantry was short of is
+    reported back (and optionally added to the grocery list) rather than
+    silently going negative.
+    """
+    meal = MealPlan.query.get_or_404(meal_id)
+    data = request.json or {}
+    add_shortfall = data.get('add_missing_to_grocery', False)
+
+    if meal.cooked_at and not data.get('force'):
+        return jsonify({'error': 'This meal is already marked cooked',
+                        'cooked_at': meal.cooked_at.isoformat()}), 409
+    if not meal.recipe:
+        return jsonify({'error': 'This meal has no recipe to deduct from'}), 400
+
+    pantry = _pantry_index()
+    consumed, short = [], []
+
+    for item in _meal_ingredients(meal):
+        entry = pantry.get(item.key)
+        if not entry:
+            if item.qty is not None:
+                short.append({'name': item.name,
+                              'needed': ing.format_amount(item.qty, item.unit)})
+            continue
+        used, shortfall, unit = _deduct_from_pantry(entry, item.qty, item.unit)
+        if used:
+            consumed.append({'name': item.name, 'used': used})
+        if shortfall:
+            short.append({'name': item.name, 'needed': ing.format_amount(shortfall, unit)})
+
+    if add_shortfall:
+        for missing in short:
+            key = ing.normalize_name(missing['name'])
+            if GroceryItem.query.filter_by(match_key=key, checked=False).first():
+                continue
+            row = GroceryItem(name=missing['name'], match_key=key,
+                              category=ing.guess_category(missing['name']))
+            qty, unit = _amount_from_text(missing['needed'], missing['name'])
+            _set_amount(row, qty, unit)
+            db.session.add(row)
+
+    meal.cooked_at = datetime.utcnow()
+    db.session.commit()
+
+    return jsonify({
+        'message': f"{meal.recipe.name} cooked — {len(consumed)} item(s) used from the pantry"
+                   + (f", {len(short)} short" if short else ''),
+        'consumed': consumed,
+        'short': short,
+        'added_to_grocery': add_shortfall,
+        'cooked_at': meal.cooked_at.isoformat(),
+    })
+
+
+@app.route('/api/meals/<int:meal_id>/uncook', methods=['POST'])
+def uncook_meal(meal_id):
+    """Undo the cooked flag (does not put ingredients back)."""
+    meal = MealPlan.query.get_or_404(meal_id)
+    meal.cooked_at = None
+    db.session.commit()
+    return jsonify({'message': 'Meal marked not cooked'})
+
+
 # ============================================================================
 # GROCERY LIST ENDPOINTS
 # ============================================================================
@@ -411,107 +829,192 @@ def grocery_list():
     if request.method == 'GET':
         list_id = request.args.get('list_id', 1, type=int)
         items = GroceryItem.query.filter_by(list_id=list_id).order_by(GroceryItem.category, GroceryItem.name).all()
-        
-        return jsonify([{
-            'id': item.id,
-            'name': item.name,
-            'quantity': item.quantity,
-            'category': item.category,
-            'checked': item.checked,
-            'recipe_id': item.recipe_id,
-            'recipe_name': item.recipe.name if item.recipe else None,
-        } for item in items])
-    
+        # Flag anything the pantry already covers so you don't buy it twice.
+        index = _pantry_index()
+        return jsonify([_serialize_grocery(item, index) for item in items])
+
     elif request.method == 'POST':
-        data = request.json
-        
+        data = request.json or {}
         item = GroceryItem(
             name=data['name'],
-            quantity=data.get('quantity', ''),
-            category=data.get('category', 'other'),
             recipe_id=data.get('recipe_id'),
-            list_id=data.get('list_id', 1)
+            list_id=data.get('list_id', 1),
         )
-        
+        _sync_row(item, name=data['name'], quantity=data.get('quantity', ''),
+                  category=data.get('category'))
         db.session.add(item)
         db.session.commit()
-        
-        return jsonify({'id': item.id, 'message': 'Item added'}), 201
+        return jsonify(_serialize_grocery(item)), 201
+
 
 @app.route('/api/grocery/<int:item_id>', methods=['PUT', 'DELETE'])
 def grocery_item(item_id):
     item = GroceryItem.query.get_or_404(item_id)
-    
+
     if request.method == 'PUT':
-        data = request.json
-        
-        item.name = data.get('name', item.name)
-        item.quantity = data.get('quantity', item.quantity)
-        item.category = data.get('category', item.category)
-        item.checked = data.get('checked', item.checked)
-        
+        data = request.json or {}
+        if 'checked' in data:
+            item.checked = bool(data['checked'])
+        if any(k in data for k in ('name', 'quantity', 'category')):
+            _sync_row(item,
+                      name=data.get('name', item.name),
+                      quantity=data.get('quantity', item.quantity),
+                      category=data.get('category'))
         db.session.commit()
-        
-        return jsonify({'message': 'Item updated'})
-    
+        return jsonify(_serialize_grocery(item))
+
     elif request.method == 'DELETE':
         db.session.delete(item)
         db.session.commit()
-        
         return jsonify({'message': 'Item deleted'})
+
 
 @app.route('/api/grocery/generate', methods=['POST'])
 def generate_grocery_list():
-    """Generate grocery list from meal plan"""
-    data = request.json
+    """
+    Build the shopping list from the meal plan, minus what's already in the pantry.
+
+    Ingredients from every planned recipe in the range are parsed, combined
+    (1 cup milk + 1/2 cup milk = 1 1/2 cup milk), checked against pantry stock,
+    and merged into the existing list rather than duplicated.
+    """
+    data = request.json or {}
     start_date = datetime.fromisoformat(data['start_date']).date()
     end_date = datetime.fromisoformat(data['end_date']).date()
-    
-    # Get all meals in date range
+    use_pantry = data.get('use_pantry', True)
+    include_optional = data.get('include_optional', True)
+    list_id = data.get('list_id', 1)
+
     meals = MealPlan.query.filter(
         MealPlan.date >= start_date,
         MealPlan.date <= end_date,
         MealPlan.recipe_id.isnot(None)
     ).all()
-    
-    # Aggregate ingredients
-    ingredient_map = {}
-    
+
+    # Collect every ingredient, remembering which recipe asked for it.
+    parsed = []
+    recipe_for_key = {}
     for meal in meals:
-        if meal.recipe and meal.recipe.ingredients:
-            ingredients = json.loads(meal.recipe.ingredients)
-            for ing in ingredients:
-                # Simple aggregation - in production, use better parsing
-                name = ing.lower().strip()
-                if name in ingredient_map:
-                    ingredient_map[name]['count'] += 1
-                else:
-                    ingredient_map[name] = {'text': ing, 'count': 1}
-    
-    # Create grocery items
-    created_count = 0
-    for name, data in ingredient_map.items():
-        # Check if already exists
-        existing = GroceryItem.query.filter_by(name=data['text'], checked=False).first()
-        if not existing:
-            item = GroceryItem(
-                name=data['text'],
-                quantity=str(data['count']) if data['count'] > 1 else '',
-                category='generated'
-            )
-            db.session.add(item)
-            created_count += 1
-    
+        for item in _meal_ingredients(meal):
+            if item.optional and not include_optional:
+                continue
+            parsed.append(item)
+            recipe_for_key.setdefault(item.key, meal.recipe_id)
+
+    needed = ing.aggregate(parsed)
+    pantry = _pantry_index() if use_pantry else {}
+
+    existing_rows = {}
+    for row in GroceryItem.query.filter_by(list_id=list_id, checked=False).all():
+        existing_rows.setdefault(row.match_key or ing.normalize_name(row.name), row)
+
+    added, merged, skipped = [], [], []
+
+    for entry in needed:
+        key = entry['key']
+        qty, unit = entry['qty'], entry['unit']
+
+        # 1. Take off what the pantry already has.
+        if key in pantry:
+            stock = pantry[key]
+            qty, unit, covered = _covers(stock, qty, unit)
+            if covered:
+                skipped.append({
+                    'name': entry['name'],
+                    'reason': 'in pantry',
+                    'pantry_amount': _stock_display(stock),
+                })
+                continue
+
+        # 2. Merge into a row already on the list instead of adding a duplicate.
+        row = existing_rows.get(key)
+        if row is not None:
+            before = ing.format_amount(row.qty, row.unit or '')
+            total, total_unit = ing.add_amounts(row.qty, row.unit or '', qty, unit)
+            _set_amount(row, total, total_unit)
+            if row.recipe_id is None:
+                row.recipe_id = recipe_for_key.get(key)
+            merged.append({'name': row.name, 'from': before,
+                           'to': ing.format_amount(row.qty, row.unit or '')})
+            continue
+
+        # 3. New row.
+        item = GroceryItem(
+            name=entry['name'],
+            category=entry['category'],
+            recipe_id=recipe_for_key.get(key),
+            list_id=list_id,
+            match_key=key,
+        )
+        _set_amount(item, qty, unit)
+        db.session.add(item)
+        existing_rows[key] = item
+        added.append({'name': item.name, 'quantity': item.quantity, 'category': item.category})
+
     db.session.commit()
-    
-    return jsonify({'message': f'{created_count} items added to grocery list'})
+
+    parts = []
+    if added:
+        parts.append(f"{len(added)} item{'s' if len(added) != 1 else ''} added")
+    if merged:
+        parts.append(f"{len(merged)} updated")
+    if skipped:
+        parts.append(f"{len(skipped)} already in the pantry")
+    message = ', '.join(parts) if parts else 'Nothing to add — the list already covers these meals'
+
+    return jsonify({
+        'message': message,
+        'meals': len(meals),
+        'added': added,
+        'merged': merged,
+        'skipped': skipped,
+    })
+
 
 @app.route('/api/grocery/clear-checked', methods=['POST'])
 def clear_checked_grocery():
-    """Remove all checked items"""
-    GroceryItem.query.filter_by(checked=True).delete()
+    """
+    Clear bought items off the list and stock them into the pantry.
+
+    This is the restock half of the loop: what you ticked off in the aisle
+    becomes inventory. Pass {"to_pantry": false} to just delete them.
+    """
+    data = request.json or {}
+    to_pantry = data.get('to_pantry', True)
+    location = data.get('location', 'pantry')
+    list_id = data.get('list_id', 1)
+
+    items = GroceryItem.query.filter_by(checked=True, list_id=list_id).all()
+    stocked = []
+
+    if to_pantry:
+        for item in items:
+            key = item.match_key or ing.normalize_name(item.name)
+            if not key:
+                continue
+            pantry_item, created = _add_to_pantry(
+                key=key, name=item.name, qty=item.qty, unit=item.unit or '',
+                category=item.category, location=location)
+            stocked.append({
+                'name': pantry_item.name,
+                'quantity': pantry_item.quantity,
+                'created': created,
+            })
+
+    count = len(items)
+    for item in items:
+        db.session.delete(item)
     db.session.commit()
-    return jsonify({'message': 'Checked items cleared'})
+
+    if not count:
+        message = 'Nothing checked off'
+    elif to_pantry:
+        message = f"{count} item{'s' if count != 1 else ''} moved to the pantry"
+    else:
+        message = f"{count} item{'s' if count != 1 else ''} cleared"
+
+    return jsonify({'message': message, 'cleared': count, 'stocked': stocked})
+
 
 # ============================================================================
 # PANTRY ENDPOINTS
@@ -522,78 +1025,86 @@ def pantry():
     if request.method == 'GET':
         location = request.args.get('location')
         expiring_soon = request.args.get('expiring_soon')
-        
+
         query = PantryItem.query
-        
         if location:
             query = query.filter_by(location=location)
-        
         if expiring_soon:
-            # Items expiring in next 7 days
-            week_from_now = datetime.now().date() + timedelta(days=7)
+            days = request.args.get('days', EXPIRATION_WARNING_DAYS, type=int)
+            cutoff = datetime.now().date() + timedelta(days=days)
             query = query.filter(
                 PantryItem.expiration_date.isnot(None),
-                PantryItem.expiration_date <= week_from_now
+                PantryItem.expiration_date <= cutoff
             )
-        
+
         items = query.order_by(PantryItem.location, PantryItem.name).all()
-        
-        return jsonify([{
-            'id': item.id,
-            'name': item.name,
-            'quantity': item.quantity,
-            'category': item.category,
-            'expiration_date': item.expiration_date.isoformat() if item.expiration_date else None,
-            'location': item.location,
-            'notes': item.notes,
-        } for item in items])
-    
+        return jsonify([_serialize_pantry(item) for item in items])
+
     elif request.method == 'POST':
-        data = request.json
-        
+        data = request.json or {}
         exp_date = None
         if data.get('expiration_date'):
             exp_date = datetime.fromisoformat(data['expiration_date']).date()
-        
+
         item = PantryItem(
             name=data['name'],
-            quantity=data.get('quantity', ''),
-            category=data.get('category', 'other'),
-            expiration_date=exp_date,
             location=data.get('location', 'pantry'),
-            notes=data.get('notes', '')
+            expiration_date=exp_date,
+            notes=data.get('notes', ''),
         )
-        
+        _sync_row(item, name=data['name'], quantity=data.get('quantity', ''),
+                  category=data.get('category'))
         db.session.add(item)
         db.session.commit()
-        
-        return jsonify({'id': item.id, 'message': 'Item added'}), 201
+        return jsonify(_serialize_pantry(item)), 201
+
 
 @app.route('/api/pantry/<int:item_id>', methods=['PUT', 'DELETE'])
 def pantry_item(item_id):
     item = PantryItem.query.get_or_404(item_id)
-    
+
     if request.method == 'PUT':
-        data = request.json
-        
-        item.name = data.get('name', item.name)
-        item.quantity = data.get('quantity', item.quantity)
-        item.category = data.get('category', item.category)
+        data = request.json or {}
         item.location = data.get('location', item.location)
         item.notes = data.get('notes', item.notes)
-        
-        if data.get('expiration_date'):
-            item.expiration_date = datetime.fromisoformat(data['expiration_date']).date()
-        
+        if 'expiration_date' in data:
+            item.expiration_date = (datetime.fromisoformat(data['expiration_date']).date()
+                                    if data['expiration_date'] else None)
+        if any(k in data for k in ('name', 'quantity', 'category')):
+            _sync_row(item,
+                      name=data.get('name', item.name),
+                      quantity=data.get('quantity', item.quantity),
+                      category=data.get('category'))
         db.session.commit()
-        
-        return jsonify({'message': 'Item updated'})
-    
+        return jsonify(_serialize_pantry(item))
+
     elif request.method == 'DELETE':
         db.session.delete(item)
         db.session.commit()
-        
         return jsonify({'message': 'Item deleted'})
+
+
+@app.route('/api/pantry/<int:item_id>/to-grocery', methods=['POST'])
+def pantry_to_grocery(item_id):
+    """Running low on something? Put it straight on the shopping list."""
+    item = PantryItem.query.get_or_404(item_id)
+    data = request.json or {}
+    list_id = data.get('list_id', 1)
+    key = item.match_key or ing.normalize_name(item.name)
+
+    existing = GroceryItem.query.filter_by(match_key=key, checked=False, list_id=list_id).first()
+    if existing:
+        return jsonify({'message': f'{item.name} is already on the list',
+                        'item': _serialize_grocery(existing), 'created': False})
+
+    row = GroceryItem(name=item.name, category=item.category, list_id=list_id, match_key=key)
+    qty, unit = _amount_from_text(data.get('quantity', ''), item.name)
+    _set_amount(row, qty, unit)
+    db.session.add(row)
+    db.session.commit()
+    return jsonify({'message': f'{item.name} added to the grocery list',
+                    'item': _serialize_grocery(row), 'created': True}), 201
+
 
 # ============================================================================
 # CALENDAR & WEATHER ENDPOINTS
@@ -820,6 +1331,373 @@ def weather():
         return jsonify({'error': str(e)}), 500
 
 # ============================================================================
+# DISPLAY & PHOTO ENDPOINTS
+# ============================================================================
+# The kiosk reads its whole appearance from `display_config` and polls
+# `revision` so edits made in the phone app appear on the wall within seconds.
+
+PHOTO_DIR = os.environ.get('DASHBOARD_PHOTOS') or os.path.join(basedir, 'photos')
+ALLOWED_PHOTO_EXT = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.heif'}
+MAX_PHOTO_EDGE = 1920          # downscale for a Pi's GPU and disk
+PHOTO_QUALITY = 85
+app.config['MAX_CONTENT_LENGTH'] = 30 * 1024 * 1024   # per-request upload cap
+
+# Screens the kiosk knows how to render. The app can hide and reorder them but
+# not invent new ones.
+SCREEN_TYPES = {
+    'calendar': 'Calendar & Weather',
+    'meals': 'Meal Plan',
+    'grocery': 'Grocery List',
+    'recipes': 'Recipes & Pantry',
+    'photos': 'Photos',
+}
+
+DEFAULT_DISPLAY = {
+    'rotation_interval': 30,
+    'clock_24h': False,
+    'show_indicators': True,
+    'theme': {
+        'primary': '#667eea',
+        'secondary': '#764ba2',
+        'text': '#ffffff',
+        'accent': '#ffd166',
+        'font': "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+        'card_opacity': 0.10,
+        'scale': 1.0,
+    },
+    'screens': [
+        {'id': 'calendar', 'enabled': True, 'duration': None},
+        {'id': 'meals', 'enabled': True, 'duration': None},
+        {'id': 'grocery', 'enabled': True, 'duration': None},
+        {'id': 'recipes', 'enabled': True, 'duration': None},
+        {'id': 'photos', 'enabled': False, 'duration': 60,
+         'options': {'interval': 8, 'shuffle': True, 'captions': True}},
+    ],
+    'screensaver': {
+        'enabled': False,
+        'idle_seconds': 300,
+        'interval': 8,
+        'shuffle': True,
+        'show_clock': True,
+    },
+}
+
+_HEX_RE = re.compile(r'^#[0-9a-fA-F]{6}$')
+
+
+def _clamp(value, low, high, fallback):
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return fallback
+    if number != number:                      # NaN
+        return fallback
+    return max(low, min(high, number))
+
+
+def _color(value, fallback):
+    value = str(value or '').strip()
+    return value if _HEX_RE.match(value) else fallback
+
+
+def _validate_display(incoming):
+    """
+    Merge a client payload onto the defaults, dropping anything unsafe.
+
+    Unknown screen ids are ignored; the order of the list is the rotation order.
+    """
+    incoming = incoming if isinstance(incoming, dict) else {}
+    base = json.loads(json.dumps(DEFAULT_DISPLAY))   # deep copy
+
+    base['rotation_interval'] = int(_clamp(
+        incoming.get('rotation_interval', base['rotation_interval']), 5, 3600,
+        base['rotation_interval']))
+    base['clock_24h'] = bool(incoming.get('clock_24h', base['clock_24h']))
+    base['show_indicators'] = bool(incoming.get('show_indicators', base['show_indicators']))
+
+    theme_in = incoming.get('theme') or {}
+    theme = base['theme']
+    for key in ('primary', 'secondary', 'text', 'accent'):
+        theme[key] = _color(theme_in.get(key), theme[key])
+    font = str(theme_in.get('font') or '').strip()
+    # Font stacks go straight into CSS, so keep the characters boring.
+    if font and len(font) <= 200 and not re.search(r'[<>{};@\\]', font):
+        theme['font'] = font
+    theme['card_opacity'] = round(_clamp(theme_in.get('card_opacity'), 0.0, 0.6,
+                                         theme['card_opacity']), 3)
+    theme['scale'] = round(_clamp(theme_in.get('scale'), 0.6, 1.6, theme['scale']), 3)
+
+    screens_in = incoming.get('screens')
+    if isinstance(screens_in, list) and screens_in:
+        defaults_by_id = {s['id']: s for s in base['screens']}
+        seen, screens = set(), []
+        for entry in screens_in:
+            if not isinstance(entry, dict):
+                continue
+            sid = str(entry.get('id') or '')
+            if sid not in SCREEN_TYPES or sid in seen:
+                continue
+            seen.add(sid)
+            merged = dict(defaults_by_id[sid])
+            merged['enabled'] = bool(entry.get('enabled', merged['enabled']))
+            duration = entry.get('duration', merged.get('duration'))
+            merged['duration'] = (None if duration in (None, '', 0)
+                                  else int(_clamp(duration, 5, 3600, 30)))
+            if sid == 'photos':
+                opts_in = entry.get('options') or {}
+                opts = dict(merged.get('options') or {})
+                opts['interval'] = int(_clamp(opts_in.get('interval'), 2, 600,
+                                              opts.get('interval', 8)))
+                opts['shuffle'] = bool(opts_in.get('shuffle', opts.get('shuffle', True)))
+                opts['captions'] = bool(opts_in.get('captions', opts.get('captions', True)))
+                merged['options'] = opts
+            screens.append(merged)
+        # Any screen the client didn't mention keeps its default, appended last,
+        # so a new screen type in a future version isn't silently lost.
+        for screen in base['screens']:
+            if screen['id'] not in seen:
+                screens.append(screen)
+        base['screens'] = screens
+
+    saver_in = incoming.get('screensaver') or {}
+    saver = base['screensaver']
+    saver['enabled'] = bool(saver_in.get('enabled', saver['enabled']))
+    saver['idle_seconds'] = int(_clamp(saver_in.get('idle_seconds'), 30, 86400,
+                                       saver['idle_seconds']))
+    saver['interval'] = int(_clamp(saver_in.get('interval'), 2, 600, saver['interval']))
+    saver['shuffle'] = bool(saver_in.get('shuffle', saver['shuffle']))
+    saver['show_clock'] = bool(saver_in.get('show_clock', saver['show_clock']))
+
+    return base
+
+
+def _get_setting(key, default=None):
+    row = Settings.query.filter_by(key=key).first()
+    return row.value if row else default
+
+
+def _put_setting(key, value):
+    row = Settings.query.filter_by(key=key).first()
+    if row:
+        row.value = value
+    else:
+        db.session.add(Settings(key=key, value=value))
+
+
+def _display_config():
+    raw = _get_setting('display_config')
+    if not raw:
+        return json.loads(json.dumps(DEFAULT_DISPLAY))
+    try:
+        return _validate_display(json.loads(raw))
+    except (ValueError, TypeError):
+        log.warning('display_config is not valid JSON; falling back to defaults')
+        return json.loads(json.dumps(DEFAULT_DISPLAY))
+
+
+def _bump_revision():
+    """Any change the kiosk should pick up bumps this counter."""
+    try:
+        current = int(_get_setting('display_revision', '0') or '0')
+    except (TypeError, ValueError):
+        current = 0
+    _put_setting('display_revision', str(current + 1))
+    return current + 1
+
+
+def _photo_url(photo):
+    return f'/photos/{photo.filename}'
+
+
+def _serialize_photo(photo):
+    return {
+        'id': photo.id,
+        'url': _photo_url(photo),
+        'filename': photo.filename,
+        'caption': photo.caption or '',
+        'width': photo.width,
+        'height': photo.height,
+        'bytes': photo.bytes,
+        'sort_order': photo.sort_order or 0,
+        'created_at': photo.created_at.isoformat() if photo.created_at else None,
+    }
+
+
+@app.route('/api/display', methods=['GET', 'PUT'])
+def display_config():
+    if request.method == 'GET':
+        photos = Photo.query.order_by(Photo.sort_order, Photo.id).all()
+        return jsonify({
+            'config': _display_config(),
+            'revision': int(_get_setting('display_revision', '0') or '0'),
+            'screen_types': SCREEN_TYPES,
+            'photos': [_serialize_photo(p) for p in photos],
+        })
+
+    config = _validate_display(request.json or {})
+    _put_setting('display_config', json.dumps(config))
+    revision = _bump_revision()
+    db.session.commit()
+    return jsonify({'message': 'Display updated', 'config': config, 'revision': revision})
+
+
+@app.route('/api/display/reset', methods=['POST'])
+def reset_display_config():
+    _put_setting('display_config', json.dumps(DEFAULT_DISPLAY))
+    revision = _bump_revision()
+    db.session.commit()
+    return jsonify({'message': 'Display reset to defaults',
+                    'config': json.loads(json.dumps(DEFAULT_DISPLAY)), 'revision': revision})
+
+
+@app.route('/api/display/revision', methods=['GET'])
+def display_revision():
+    """Cheap poll for the kiosk: has anything changed since revision N?"""
+    return jsonify({'revision': int(_get_setting('display_revision', '0') or '0')})
+
+
+# ---- Photos ---------------------------------------------------------------
+
+def _store_photo(file_storage):
+    """
+    Save an uploaded image, downscaling it when Pillow is available.
+
+    Returns a Photo (not yet committed) or raises ValueError with a reason.
+    """
+    original = os.path.basename(file_storage.filename or 'photo')
+    ext = os.path.splitext(original)[1].lower()
+    if ext not in ALLOWED_PHOTO_EXT:
+        raise ValueError(f'{original}: not an image we can show '
+                         f'({", ".join(sorted(ALLOWED_PHOTO_EXT))})')
+
+    os.makedirs(PHOTO_DIR, exist_ok=True)
+    stored_ext = '.jpg' if ext in ('.heic', '.heif') else ext
+    filename = f'{uuid.uuid4().hex}{stored_ext}'
+    path = os.path.join(PHOTO_DIR, filename)
+
+    width = height = None
+    try:
+        from PIL import Image, ImageOps
+        try:                                   # iPhone HEIC support, if installed
+            import pillow_heif
+            pillow_heif.register_heif_opener()
+        except ImportError:
+            if ext in ('.heic', '.heif'):
+                raise ValueError(
+                    f'{original}: HEIC photos need pillow-heif on the Pi '
+                    '(pip install pillow-heif), or share them as JPEG')
+
+        file_storage.stream.seek(0)
+        with Image.open(file_storage.stream) as img:
+            img = ImageOps.exif_transpose(img)     # honour the phone's rotation
+            if img.mode in ('RGBA', 'P', 'LA') and stored_ext in ('.jpg', '.jpeg'):
+                img = img.convert('RGB')
+            img.thumbnail((MAX_PHOTO_EDGE, MAX_PHOTO_EDGE), Image.LANCZOS)
+            width, height = img.size
+            save_args = {'quality': PHOTO_QUALITY, 'optimize': True} \
+                if stored_ext in ('.jpg', '.jpeg') else {}
+            img.save(path, **save_args)
+    except ImportError:
+        # No Pillow: store the original bytes untouched. Fine for a handful of
+        # photos; install Pillow on the Pi for large albums.
+        if ext in ('.heic', '.heif'):
+            raise ValueError(f'{original}: HEIC needs Pillow installed on the Pi')
+        file_storage.stream.seek(0)
+        file_storage.save(path)
+
+    photo = Photo(
+        filename=filename,
+        original_name=original[:255],
+        caption='',
+        width=width,
+        height=height,
+        bytes=os.path.getsize(path),
+        sort_order=(db.session.query(db.func.max(Photo.sort_order)).scalar() or 0) + 1,
+    )
+    return photo
+
+
+@app.route('/api/photos', methods=['GET', 'POST'])
+def photos():
+    if request.method == 'GET':
+        rows = Photo.query.order_by(Photo.sort_order, Photo.id).all()
+        return jsonify([_serialize_photo(p) for p in rows])
+
+    files = request.files.getlist('files') or request.files.getlist('file')
+    if not files:
+        return jsonify({'error': 'No file uploaded'}), 400
+
+    saved, errors = [], []
+    for file_storage in files:
+        if not file_storage or not file_storage.filename:
+            continue
+        try:
+            photo = _store_photo(file_storage)
+            db.session.add(photo)
+            db.session.flush()
+            saved.append(_serialize_photo(photo))
+        except ValueError as err:
+            errors.append(str(err))
+        except Exception as err:               # noqa: BLE001 - report, don't 500
+            log.exception('photo upload failed')
+            errors.append(f'{file_storage.filename}: {err}')
+
+    if saved:
+        _bump_revision()
+    db.session.commit()
+
+    if not saved:
+        return jsonify({'error': '; '.join(errors) or 'Nothing uploaded'}), 400
+    return jsonify({'message': f"{len(saved)} photo{'s' if len(saved) != 1 else ''} added",
+                    'photos': saved, 'errors': errors}), 201
+
+
+@app.route('/api/photos/<int:photo_id>', methods=['PUT', 'DELETE'])
+def photo_detail(photo_id):
+    photo = Photo.query.get_or_404(photo_id)
+
+    if request.method == 'PUT':
+        data = request.json or {}
+        if 'caption' in data:
+            photo.caption = str(data['caption'] or '')[:200]
+        if 'sort_order' in data:
+            photo.sort_order = int(_clamp(data['sort_order'], 0, 100000, photo.sort_order or 0))
+        _bump_revision()
+        db.session.commit()
+        return jsonify(_serialize_photo(photo))
+
+    path = os.path.join(PHOTO_DIR, photo.filename)
+    if os.path.isfile(path):
+        try:
+            os.remove(path)
+        except OSError as err:
+            log.warning('could not remove %s: %s', path, err)
+    db.session.delete(photo)
+    _bump_revision()
+    db.session.commit()
+    return jsonify({'message': 'Photo deleted'})
+
+
+@app.route('/api/photos/reorder', methods=['POST'])
+def reorder_photos():
+    """Body: {"ids": [3, 1, 2]} — the new slideshow order."""
+    ids = (request.json or {}).get('ids') or []
+    for position, photo_id in enumerate(ids):
+        photo = db.session.get(Photo, photo_id)
+        if photo:
+            photo.sort_order = position
+    _bump_revision()
+    db.session.commit()
+    return jsonify({'message': 'Order saved'})
+
+
+@app.route('/photos/<path:filename>')
+def serve_photo(filename):
+    """Serve an uploaded photo to the kiosk / app."""
+    return send_from_directory(PHOTO_DIR, filename)
+
+
+# ============================================================================
 # SETTINGS ENDPOINTS
 # ============================================================================
 
@@ -879,11 +1757,76 @@ def mobile():
 # DATABASE INITIALIZATION
 # ============================================================================
 
+def _migrate_schema():
+    """
+    Add columns introduced after a dashboard was already installed.
+
+    SQLAlchemy's create_all() only creates missing *tables*, so a Pi that has
+    been running since before the inventory features would keep its old
+    grocery/pantry tables and every query would fail. SQLite can add columns
+    in place, which is all we need.
+    """
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(db.engine)
+    wanted = {
+        'grocery_item': {
+            'qty': 'FLOAT',
+            'unit': 'VARCHAR(20)',
+            'match_key': 'VARCHAR(200)',
+        },
+        'pantry_item': {
+            'qty': 'FLOAT',
+            'unit': 'VARCHAR(20)',
+            'match_key': 'VARCHAR(200)',
+        },
+        'meal_plan': {
+            'servings': 'INTEGER',
+            'cooked_at': 'DATETIME',
+        },
+    }
+
+    added = []
+    existing_tables = set(inspector.get_table_names())
+    for table, columns in wanted.items():
+        if table not in existing_tables:
+            continue                               # create_all() just made it
+        present = {c['name'] for c in inspector.get_columns(table)}
+        for column, ddl in columns.items():
+            if column in present:
+                continue
+            with db.engine.begin() as conn:
+                conn.execute(text(f'ALTER TABLE {table} ADD COLUMN {column} {ddl}'))
+            added.append(f'{table}.{column}')
+
+    if added:
+        log.info('Schema updated: added %s', ', '.join(added))
+    return added
+
+
+def _backfill_match_keys():
+    """
+    Give existing grocery/pantry rows the parsed amounts the new features need.
+
+    Runs once: rows that already have a match_key are left alone.
+    """
+    touched = 0
+    for model in (GroceryItem, PantryItem):
+        for row in model.query.filter((model.match_key.is_(None)) | (model.match_key == '')).all():
+            _sync_row(row, quantity=row.quantity)
+            touched += 1
+    if touched:
+        db.session.commit()
+        log.info('Backfilled %d existing item(s) with parsed amounts', touched)
+    return touched
+
+
 def init_db():
     """Initialize database with default settings"""
     with app.app_context():
         db.create_all()
-        
+        _migrate_schema()
+
         # Add default settings if they don't exist
         default_settings = {
             'screen_rotation_interval': '30',  # seconds
@@ -891,14 +1834,19 @@ def init_db():
             'default_screen': '0',
             'location': 'Rochester, NY',
             'temperature_unit': 'F',
+            'display_config': json.dumps(DEFAULT_DISPLAY),
+            'display_revision': '1',
         }
-        
+
         for key, value in default_settings.items():
             if not Settings.query.filter_by(key=key).first():
                 db.session.add(Settings(key=key, value=value))
-        
+
         db.session.commit()
+        _backfill_match_keys()
+        os.makedirs(PHOTO_DIR, exist_ok=True)
         log.info("Database initialized")
+
 
 # ============================================================================
 # MAIN

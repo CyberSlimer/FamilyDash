@@ -6,6 +6,7 @@ config/calendars.json
 # Database & backups
 backend/dashboard.db
 backend/instance/
+backend/photos/
 *.db
 *.db.bak
 backups/
