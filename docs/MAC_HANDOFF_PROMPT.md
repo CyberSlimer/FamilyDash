@@ -1,5 +1,11 @@
 # Prompt for the Mac session
 
+> **Done — kept for reference.** This prompt was run on 2026-09-18: pod install, signing
+> (Team 5X895J3VYD), simulator/device checks, screenshots, the App Store Connect record and
+> TestFlight builds 1–2 are all complete, and build 3 followed on 2026-09-19. The Mac clone
+> lives at `~/dev/FamilyDash`. For any later build, follow the "Day-to-day after setup" section
+> of [`app/README.md`](../app/README.md) instead of re-running this.
+
 Paste everything inside the code block into Claude Code on the Mac. It contains all the
 context needed; no prior conversation required.
 

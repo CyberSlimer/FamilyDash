@@ -103,6 +103,26 @@ cd app && npm run sync          # rebuild www/ and copy into the Xcode project
 
 then Run/Archive from Xcode as usual. Nothing in `ios/` needs hand-editing for UI changes.
 
+To push a new build to TestFlight from the command line instead (what each build so far has
+used), bump `CURRENT_PROJECT_VERSION` in `ios/App/App.xcodeproj/project.pbxproj` (two
+occurrences, Debug and Release), then:
+
+```bash
+cd app/ios/App
+xcodebuild -workspace App.xcworkspace -scheme App -configuration Release \
+  -destination 'generic/platform=iOS' -archivePath ../../build/FamilyDash.xcarchive \
+  -allowProvisioningUpdates archive
+cp ../../ExportOptions.plist /tmp/ExportOptions-upload.plist
+/usr/libexec/PlistBuddy -c 'Set :destination upload' /tmp/ExportOptions-upload.plist
+xcodebuild -exportArchive -archivePath ../../build/FamilyDash.xcarchive \
+  -exportOptionsPlist /tmp/ExportOptions-upload.plist -exportPath ../../build/export \
+  -allowProvisioningUpdates
+```
+
+`app/build/` is git-ignored. The build shows up under TestFlight in App Store Connect after
+10–30 minutes and the "Family" group gets it automatically. Build history and gotchas are in
+[`docs/APP_STORE_SUBMISSION.md`](../docs/APP_STORE_SUBMISSION.md) §8.
+
 ## Troubleshooting
 
 - **"Can't reach http://…" banner** — the phone isn't on the same Wi-Fi as the Pi, the Pi is off, or the address changed. Tap the banner to fix the address. Giving the Pi a static IP / DHCP reservation on your router avoids this.

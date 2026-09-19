@@ -216,12 +216,17 @@ the project shipped with Capacitor's default `IPHONEOS_DEPLOYMENT_TARGET = 13.0`
 target and Podfile are on **iOS 15.0** (the Podfile's `post_install` pins the Capacitor pods to
 match). Keep it at 15 or higher for future builds.
 
+Build 3 (2026-09-19) carries the inventory loop and the Display tab (first build with the
+camera/photo-library usage strings). Archived and uploaded with the two commands above, using a
+copy of `ExportOptions.plist` with `destination` set to `upload` — the committed file stays on
+`export` so a plain `-exportArchive` only produces an .ipa.
+
 ---
 
 ## 9a. Route A — TestFlight internal testers
 
 **Status 2026-09-18:** internal group **"Family"** exists with automatic distribution on and
-builds 1.0.0 (1) and (2) attached; `ryan.j.probst@icloud.com` invited. To add family members:
+builds 1.0.0 (1), (2) and (3) attached (build 3 uploaded 2026-09-19); `ryan.j.probst@icloud.com` invited. To add family members:
 Users and Access → + (role *Customer Support* is enough) → then TestFlight → Family → + tester.
 
 App Store Connect → your app → **TestFlight** → **Internal Testing** → **+** create a group
