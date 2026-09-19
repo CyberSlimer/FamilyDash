@@ -33,7 +33,7 @@ Everything below covers both; B-only items are marked.
 | Field | Value |
 |---|---|
 | Platforms | iOS |
-| Name | `FamilyDash` (if taken, try `FamilyDash – Home Board` or `FamilyDash Pi`; the name only has to be unique on the App Store, and the bundle id can stay the same) |
+| Name | **`Family Dashboard Planner`** — created 2026-09-18 (App ID 6813711751). `FamilyDash` was the original plan; the listing name only has to be unique on the App Store, the on-device name stays FamilyDash. |
 | Primary language | English (U.S.) |
 | Bundle ID | `com.cyberslimer.familydash` — appears in the dropdown only after the first Xcode archive/registration of that id. If it's not there yet, register it at developer.apple.com → Identifiers → **+** → App IDs, or let Xcode do it by archiving once with automatic signing. |
 | SKU | `familydash-ios` |
@@ -216,6 +216,10 @@ match). Keep it at 15 or higher for future builds.
 ---
 
 ## 9a. Route A — TestFlight internal testers
+
+**Status 2026-09-18:** internal group **"Family"** exists with automatic distribution on and
+builds 1.0.0 (1) and (2) attached; `ryan.j.probst@icloud.com` invited. To add family members:
+Users and Access → + (role *Customer Support* is enough) → then TestFlight → Family → + tester.
 
 App Store Connect → your app → **TestFlight** → **Internal Testing** → **+** create a group
 (e.g. "Family") → add testers. Each tester needs to be added as a **User** under Users and Access
