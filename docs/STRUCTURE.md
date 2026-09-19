@@ -259,24 +259,40 @@ URL: http://localhost:5000
 - POST   /api/recipes/import-url
 
 ### Meals
-- GET    /api/meals
+- GET    /api/meals                      (?with_availability=1 for pantry coverage)
 - POST   /api/meals
 - PUT    /api/meals/{id}
 - DELETE /api/meals/{id}
+- GET    /api/meals/{id}/availability    needed vs. in stock
+- POST   /api/meals/{id}/cook            deduct ingredients from the pantry
+- POST   /api/meals/{id}/uncook
 
 ### Grocery
-- GET    /api/grocery
+- GET    /api/grocery                    rows flagged with pantry coverage
 - POST   /api/grocery
 - PUT    /api/grocery/{id}
 - DELETE /api/grocery/{id}
-- POST   /api/grocery/generate
-- POST   /api/grocery/clear-checked
+- POST   /api/grocery/generate           from meals, minus pantry stock
+- POST   /api/grocery/clear-checked      bought items -> pantry
 
 ### Pantry
 - GET    /api/pantry
 - POST   /api/pantry
 - PUT    /api/pantry/{id}
 - DELETE /api/pantry/{id}
+- POST   /api/pantry/{id}/to-grocery     running low -> shopping list
+
+### Display & Photos
+- GET    /api/display                    theme, screen order, screensaver, photos
+- PUT    /api/display
+- POST   /api/display/reset
+- GET    /api/display/revision           cheap change poll for the kiosk
+- GET    /api/photos
+- POST   /api/photos                     multipart upload
+- PUT    /api/photos/{id}
+- DELETE /api/photos/{id}
+- POST   /api/photos/reorder
+- GET    /photos/{file}                  the stored image
 
 ### Weather & Calendar
 - GET    /api/weather
@@ -301,11 +317,37 @@ User Action → Mobile Interface → REST API → Database
                             Main Dashboard ← Auto Refresh
 ```
 
+### Kitchen inventory loop
+
+`match_key` (a normalized ingredient name from `backend/ingredients.py`) is
+what links a row in one list to its counterpart in another:
+
+```
+Recipe ingredients ──parse──> (qty, unit, match_key)
+         │
+         ├─ generate ──> Grocery list   (minus pantry stock)
+         │                    │
+         │              clear-checked
+         │                    ↓
+         └─ cook <──────── Pantry  ──to-grocery──> Grocery list
+            (deducts)
+```
+
+### Display settings
+
+```
+App: Display tab ──PUT /api/display──> Settings.display_config (+revision)
+                                             ↑
+Kiosk ──GET /api/display/revision every 15s──┘  changed? reload and re-theme
+Controller ──GET /api/display every 30s──> screensaver on? leave monitor powered
+```
+
 ## 🔌 Hardware Signal Flow
 
 ```
 Button Press → GPIO 17 → controller.py → xdotool → Browser → Next Screen
 Motion Sensor → GPIO 27 → controller.py → vcgencmd → Display On/Off
+                                       └──> xdotool → Browser → wake from screensaver
 ```
 
 ## 📦 Dependencies

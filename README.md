@@ -12,11 +12,29 @@ A complete family command center running on Raspberry Pi 4 with a 27" landscape 
 
 ### Mobile Web Interface
 - **Recipe Management** - Add, edit, import from URLs
-- **Meal Planning** - Plan meals for the week
-- **Grocery Lists** - Manage shopping lists, auto-generate from meals
-- **Pantry Tracking** - Track inventory and expiration dates
+- **Meal Planning** - Plan meals for the week, with ingredient coverage at a glance
+- **Grocery Lists** - Auto-generated from meals, minus what the pantry already holds
+- **Pantry Tracking** - Inventory and expiration dates, restocked from the shopping list
 - **Calendar Setup** - Add Google/iCloud/Outlook feeds, test them, pick colors
+- **Display Settings** - Restyle and rearrange the Pi's screens, and add photos
 - **Installable** - Add to Home Screen as a PWA, or build the native iOS app in `app/`
+
+### One Kitchen Inventory
+Meals, the grocery list and the pantry share a single set of amounts, so the
+three stay in step:
+
+- **Generate** reads the week's recipes, adds up real quantities
+  (`1 cup milk` + `½ cup milk` = `1 ½ cups milk`), subtracts what's in the
+  pantry, and tops up rows already on the list instead of duplicating them
+- **Clear ✓** moves what you bought into the pantry
+- **Cooked it** takes a meal's ingredients back out, oldest expiry first, and
+  puts anything you were short of on the shopping list
+- **🛒 on a pantry row** puts a low item straight back on the list
+
+Recipe lines are parsed by `backend/ingredients.py`, which understands
+fractions (`1 1/2`, `½`), ranges (`2-3 cloves`, resolved upward), pack sizes
+(`2 (14 oz) cans`) and unit conversion, and reduces names to a shared key so
+`Fresh Bell Peppers, diced` matches `3 bell pepper`.
 
 ### Hardware Controls
 - **Physical Button** - Advance to next screen
@@ -359,6 +377,30 @@ vcgencmd display_power 1  # On
 - Some sites block scrapers - try different sites
 - Manually add recipe if import fails
 
+## 🖥️ Customising the Pi display
+
+Everything about the wall display is set from the **Display** tab in the app —
+no editing files on the Pi. Changes are saved as you make them and the kiosk
+picks them up within about 15 seconds, without a reload.
+
+- **Screens** — turn any of the five screens off, reorder them, and give each
+  its own time on screen (blank uses the default rotation interval)
+- **Colours & text** — background gradient, text and accent colours, font,
+  text size, and how bright the panels sit over the background
+- **Photos** — upload from your phone, caption them, delete them. They feed
+  the Photos screen and the screensaver
+- **Screensaver** — after a set idle time the dashboard fades into a
+  full-screen photo slideshow with a clock, waking on motion, a key or a touch
+
+With the screensaver on, the hardware controller leaves the monitor powered so
+the idle display is a photo frame rather than a black rectangle; it only cuts
+power much later. With it off, the original motion-timeout behaviour applies.
+
+Photos are stored in `backend/photos/` and served from `/photos/<file>`.
+Install Pillow on the Pi (it's in `requirements.txt`) so uploads are
+downscaled to 1920px — a phone's full-size photos will otherwise fill the SD
+card and stutter on a Pi 4. HEIC photos additionally need `pillow-heif`.
+
 ## 📱 API Reference
 
 ### Recipes
@@ -370,24 +412,49 @@ vcgencmd display_power 1  # On
 - `POST /api/recipes/import-url` - Import from URL
 
 ### Meals
-- `GET /api/meals` - List meals (supports date filtering)
-- `POST /api/meals` - Create meal plan
+- `GET /api/meals` - List meals (supports date filtering; `?with_availability=1`
+  adds `have`/`total` ingredient coverage per meal)
+- `POST /api/meals` - Create meal plan (optional `servings` scales the recipe)
 - `PUT /api/meals/{id}` - Update meal
 - `DELETE /api/meals/{id}` - Delete meal
+- `GET /api/meals/{id}/availability` - Ingredients needed vs. pantry stock
+- `POST /api/meals/{id}/cook` - Mark cooked and deduct from the pantry.
+  `{"add_missing_to_grocery": true}` puts any shortfall on the list;
+  `{"force": true}` deducts again for a meal already marked cooked
+- `POST /api/meals/{id}/uncook` - Clear the cooked flag (does not restore stock)
 
 ### Grocery
-- `GET /api/grocery` - List grocery items
-- `POST /api/grocery` - Add item
+- `GET /api/grocery` - List grocery items, each flagged with `in_pantry` /
+  `pantry_amount`
+- `POST /api/grocery` - Add item (an amount typed into the name is lifted out)
 - `PUT /api/grocery/{id}` - Update item
 - `DELETE /api/grocery/{id}` - Delete item
-- `POST /api/grocery/generate` - Generate from meals
-- `POST /api/grocery/clear-checked` - Remove checked
+- `POST /api/grocery/generate` - Build from the meal plan.
+  `{"start_date", "end_date", "use_pantry": true, "include_optional": true}`;
+  answers with `added`, `merged` and `skipped`
+- `POST /api/grocery/clear-checked` - Clear bought items.
+  `{"to_pantry": true, "location": "pantry"}` stocks the pantry with them
 
 ### Pantry
-- `GET /api/pantry` - List pantry items
+- `GET /api/pantry` - List pantry items (`?location=`, `?expiring_soon=1&days=7`)
 - `POST /api/pantry` - Add item
 - `PUT /api/pantry/{id}` - Update item
 - `DELETE /api/pantry/{id}` - Delete item
+- `POST /api/pantry/{id}/to-grocery` - Add this item to the shopping list
+
+### Display & Photos
+- `GET /api/display` - Screen order, theme, screensaver settings, photo list
+  and the current `revision`
+- `PUT /api/display` - Save display settings (unknown screens and unsafe
+  colours/fonts are rejected rather than stored)
+- `POST /api/display/reset` - Back to the original look
+- `GET /api/display/revision` - Cheap poll; the kiosk uses it to spot changes
+- `GET /api/photos` - Uploaded photos
+- `POST /api/photos` - Upload one or more (`files`, multipart). Images are
+  downscaled to 1920px when Pillow is installed
+- `PUT /api/photos/{id}` - Set caption or sort order
+- `DELETE /api/photos/{id}` - Remove the photo and its file
+- `POST /api/photos/reorder` - `{"ids": [3, 1, 2]}` sets slideshow order
 
 ### Weather & System
 - `GET /api/weather` - Weather + NWS alerts for the configured location
