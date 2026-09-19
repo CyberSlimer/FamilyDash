@@ -194,7 +194,17 @@ xcodebuild -exportArchive -archivePath ../../build/FamilyDash.xcarchive \
 # upload: Xcode Organizer, Transporter.app, or:
 xcrun altool --upload-app -f ../../build/export/App.ipa -t ios --apiKey KEY_ID --apiIssuer ISSUER_ID
 ```
-`app/ExportOptions.plist` (method `app-store`, automatic signing) is included in the repo.
+`app/ExportOptions.plist` (method `app-store-connect`, automatic signing, teamID filled in) is
+included in the repo. Add `-allowProvisioningUpdates` to both commands so Xcode can create the
+Apple Distribution certificate and profile on first use.
+
+**Verified on the Mac (2026-09-18):** both commands succeed once the Apple Account in
+Xcode → Settings → Accounts has a live session (an expired session shows up as
+*"Unable to log in with account … login details were rejected"* from `xcodebuild`; sign in
+again in the GUI). Uploading non-interactively (`destination: upload` in ExportOptions, or
+altool) **requires the app record from §1 to exist first** — without it the upload fails with
+`missingApp(bundleId: "com.cyberslimer.familydash")`. The Xcode Organizer route is the one
+path that offers to create the record for you during Upload.
 
 The build appears under **TestFlight** in App Store Connect after ~10–30 min of processing.
 

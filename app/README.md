@@ -73,12 +73,17 @@ In Xcode:
 The first time the app talks to the Pi, iOS asks *"FamilyDash would like to find and connect to devices on your local network"* — tap **Allow**. (That prompt comes from `NSLocalNetworkUsageDescription` in `Info.plist`; the `NSAppTransportSecurity` entry there is what permits plain `http://` to the Pi.)
 
 After pod install succeeds, commit `ios/App/Podfile.lock` so builds are reproducible.
+(Done 2026-09-18 with Xcode 26.6 / CocoaPods 1.16.2 via Homebrew — CocoaPods wants
+`export LANG=en_US.UTF-8` in the shell.)
 
 ## App Store screenshots
 
 ```bash
 npm run screenshots         # macOS: builds demo mode, boots simulators, saves app/screenshots/<device>/*.png
 ```
+
+A full set (iPhone 16 Pro Max 1320×2868 and iPad Pro 13-inch M4 2064×2752, one per tab) is
+committed under `screenshots/`; re-run only after a visible UI change.
 
 ## Shipping to the family (TestFlight)
 
