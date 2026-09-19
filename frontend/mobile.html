@@ -1274,6 +1274,7 @@
             document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
             
             event.target.classList.add('active');
+            event.target.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
             document.getElementById(`${tabName}-tab`).classList.add('active');
             
             loadTabData(tabName);
