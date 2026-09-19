@@ -723,6 +723,131 @@
             line-height: 1.45;
         }
 
+        /* ---- Wall preview ----
+           The stage is built at the real 1920x1080 and scaled down, so type
+           sizes and spacing stay in the same proportion as the kiosk instead
+           of being guessed at small sizes. */
+        .preview-frame {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 16 / 9;
+            border-radius: 12px;
+            overflow: hidden;
+            background: #000;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+        }
+
+        .preview-stage {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 1920px;
+            height: 1080px;
+            transform-origin: top left;
+            font-family: var(--pv-font);
+            color: var(--pv-text);
+            font-size: calc(16px * var(--pv-scale, 1));
+            background: linear-gradient(135deg, var(--pv-primary) 0%, var(--pv-secondary) 100%);
+        }
+
+        .pv-screen {
+            position: absolute;
+            inset: 0;
+            padding: 40px;
+            display: none;
+            flex-direction: column;
+        }
+        .pv-screen.active { display: flex; }
+
+        .pv-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.3);
+        }
+        .pv-header h1 { font-size: 3em; font-weight: 300; }
+        .pv-time { font-size: 4em; font-weight: 200; line-height: 1; text-align: right; }
+        .pv-date { font-size: 1.5em; font-weight: 300; text-align: right; opacity: 0.9; }
+
+        .pv-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 26px;
+            align-content: start;
+        }
+        /* The kiosk's two-column screens sit inside a flex:1 content area and
+           fill the height, so the preview does the same. The multi-card grids
+           (meals, grocery) are content-height there too. */
+        .pv-grid.cols-2 {
+            grid-template-columns: 1.4fr 1fr;
+            flex: 1;
+            min-height: 0;
+            align-content: stretch;
+        }
+
+        .pv-card {
+            background: var(--pv-card);
+            border-radius: 20px;
+            padding: 30px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            overflow: hidden;
+        }
+        .pv-card h2 { font-size: 1.9em; font-weight: 500; margin-bottom: 16px; }
+        .pv-row {
+            font-size: 1.35em;
+            padding: 12px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.13);
+        }
+        .pv-row:last-child { border-bottom: none; }
+        .pv-row small { font-size: 0.72em; opacity: 0.75; display: block; }
+        .pv-accent { color: var(--pv-accent); }
+        .pv-empty { font-size: 1.3em; opacity: 0.6; padding: 12px 0; }
+
+        .pv-photo-stage { position: absolute; inset: 0; background: #000; overflow: hidden; }
+        .pv-photo-stage img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+        .pv-photo-stage img.pv-backdrop { object-fit: cover; filter: blur(28px) brightness(0.45); transform: scale(1.1); }
+        .pv-caption {
+            position: absolute; left: 0; right: 0; bottom: 0;
+            padding: 60px 50px 40px;
+            font-size: 2em; font-weight: 300;
+            text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
+            background: linear-gradient(transparent, rgba(0, 0, 0, 0.65));
+        }
+
+        /* Bottom-right, like the kiosk's .screen-indicator. */
+        .pv-dots {
+            position: absolute; bottom: 20px; right: 20px;
+            display: flex; gap: 10px;
+        }
+        .pv-dot { width: 14px; height: 14px; border-radius: 50%; background: rgba(255, 255, 255, 0.3); }
+        .pv-dot.on { background: rgba(255, 255, 255, 0.95); }
+
+        .pv-saver {
+            position: absolute; inset: 0; background: #000;
+            opacity: 0; pointer-events: none; transition: opacity 0.5s;
+        }
+        .pv-saver.on { opacity: 1; }
+        .pv-saver-clock { position: absolute; left: 50px; bottom: 40px; text-shadow: 0 2px 16px rgba(0,0,0,0.9); }
+        .pv-saver-clock .pv-time { font-size: 5em; text-align: left; }
+        .pv-saver-clock .pv-date { font-size: 1.6em; text-align: left; }
+
+        .preview-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 10px;
+            flex-wrap: wrap;
+        }
+        .preview-controls .now-showing {
+            flex: 1;
+            font-size: 0.86em;
+            opacity: 0.75;
+            min-width: 100px;
+        }
+        .preview-note { font-size: 0.8em; opacity: 0.65; margin-top: 8px; line-height: 1.45; }
+
         /* ---- Display tab ---- */
         .screen-row {
             display: flex;
@@ -894,8 +1019,27 @@
         <div id="display-tab" class="tab-content">
             <div class="card">
                 <div class="card-header">
-                    <h2 class="card-title">Screens</h2>
+                    <h2 class="card-title">On the wall</h2>
                     <span class="display-saved" id="display-saved">Saved ✓</span>
+                </div>
+                <div class="preview-frame">
+                    <div class="preview-stage" id="preview-stage"></div>
+                </div>
+                <div class="preview-controls">
+                    <button class="btn btn-secondary btn-small" onclick="previewStep(-1)">‹</button>
+                    <button class="btn btn-secondary btn-small" id="preview-play"
+                            onclick="togglePreviewPlay()">⏸</button>
+                    <button class="btn btn-secondary btn-small" onclick="previewStep(1)">›</button>
+                    <span class="now-showing" id="preview-now"></span>
+                    <button class="btn btn-secondary btn-small" id="preview-saver-btn"
+                            onclick="togglePreviewSaver()">Screensaver</button>
+                </div>
+                <div class="preview-note" id="preview-note"></div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Screens</h2>
                 </div>
                 <p class="modal-intro">Turn screens on or off, drag them into order with the
                    arrows, and set how long each one stays up. Blank duration uses the
@@ -2102,6 +2246,9 @@
 
             const fab = document.getElementById('add-fab');
             if (fab) fab.style.display = TABS_WITHOUT_ADD.includes(tabName) ? 'none' : '';
+
+            // The preview animates; don't leave it running behind another tab.
+            if (tabName !== 'display') clearTimeout(previewTimer);
             
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
@@ -2514,6 +2661,10 @@
                 displayPhotos = data.photos || [];
                 renderDisplay();
                 bindDisplayInputs();
+                previewNote();
+                if (!previewData) await loadPreviewData();
+                renderPreview();
+                schedulePreview();
             } catch (error) {
                 console.error('Error loading display settings:', error);
             }
@@ -2563,6 +2714,7 @@
 
             updateThemePreview();
             renderPhotos();
+            renderPreview();
         }
 
         function updateThemePreview() {
@@ -2606,6 +2758,7 @@
 
         function queueDisplaySave() {
             updateThemePreview();
+            renderPreview();
             clearTimeout(saveTimer);
             saveTimer = setTimeout(saveDisplay, 600);
         }
@@ -2630,8 +2783,11 @@
         function setScreenEnabled(id, enabled) {
             const screen = displayConfig.screens.find(s => s.id === id);
             if (screen) screen.enabled = enabled;
+            // Turning off the screen being previewed would leave it stranded.
+            previewIndex = 0;
             renderDisplay();
             queueDisplaySave();
+            schedulePreview();
         }
 
         function setScreenDuration(id, value) {
@@ -2647,6 +2803,7 @@
             [screens[index], screens[target]] = [screens[target], screens[index]];
             renderDisplay();
             queueDisplaySave();
+            schedulePreview();
         }
 
         async function resetDisplay() {
@@ -2736,7 +2893,9 @@
 
         async function refreshPhotos() {
             displayPhotos = await (await fetch(`${API_BASE}/photos`)).json();
+            previewPhotoIndex = 0;
             renderPhotos();
+            renderPreview();
         }
 
         async function deletePhoto(id) {
@@ -2753,6 +2912,290 @@
             });
             const photo = displayPhotos.find(p => p.id === id);
             if (photo) photo.caption = caption;
+        }
+
+        // =============================================
+        // WALL PREVIEW
+        // =============================================
+        // A scaled-down stand-in for the Pi's screen, so the display can be set
+        // up before the Pi is plugged in. The stage is laid out at the real
+        // 1920x1080 and scaled with a CSS transform, so type and spacing keep
+        // the kiosk's proportions. It is a close approximation of the real
+        // screens, not a pixel copy of them.
+
+        let previewData = null;       // {events, meals, grocery, recipes, pantry}
+        let previewIndex = 0;
+        let previewTimer = null;
+        let previewPlaying = true;
+        let previewSaverOn = false;
+        let previewPhotoIndex = 0;
+
+        function previewScreens() {
+            const enabled = (displayConfig.screens || []).filter(s => s.enabled);
+            return enabled.length ? enabled : [{ id: 'calendar', duration: null }];
+        }
+
+        function fitPreview() {
+            const stage = document.getElementById('preview-stage');
+            if (!stage || !stage.parentElement) return;
+            stage.style.transform = `scale(${stage.parentElement.clientWidth / 1920})`;
+        }
+
+        async function loadPreviewData() {
+            const grab = async (path, fallback) => {
+                try {
+                    const res = await fetch(`${API_BASE}${path}`);
+                    return res.ok ? await res.json() : fallback;
+                } catch (e) { return fallback; }
+            };
+            const today = new Date(); today.setHours(0, 0, 0, 0);
+            const weekEnd = new Date(today); weekEnd.setDate(weekEnd.getDate() + 7);
+            const [events, meals, grocery, recipes, pantry] = await Promise.all([
+                grab(`/calendar/events?start_date=${today.toISOString()}&end_date=${weekEnd.toISOString()}`, []),
+                grab(`/meals?start_date=${today.toISOString()}&end_date=${weekEnd.toISOString()}`, []),
+                grab('/grocery', []),
+                grab('/recipes?favorite=true', []),
+                grab('/pantry?expiring_soon=1', []),
+            ]);
+            previewData = { events, meals, grocery, recipes, pantry };
+        }
+
+        function previewClock() {
+            const now = new Date();
+            return {
+                time: now.toLocaleTimeString('en-US', {
+                    hour: 'numeric', minute: '2-digit',
+                    hour12: !document.getElementById('display-24h').checked }),
+                date: now.toLocaleDateString('en-US', {
+                    weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }),
+            };
+        }
+
+        function pvHeader(title) {
+            const { time, date } = previewClock();
+            return `<div class="pv-header">
+                        <h1>${title}</h1>
+                        <div><div class="pv-time">${time}</div><div class="pv-date">${date}</div></div>
+                    </div>`;
+        }
+
+        function pvRows(items, render, empty) {
+            if (!items.length) return `<div class="pv-empty">${empty}</div>`;
+            return items.map(render).join('');
+        }
+
+        function previewScreenHtml(id) {
+            const d = previewData || { events: [], meals: [], grocery: [], recipes: [], pantry: [] };
+
+            if (id === 'calendar') {
+                const today = new Date(); today.setHours(0, 0, 0, 0);
+                const tomorrow = new Date(today); tomorrow.setDate(tomorrow.getDate() + 1);
+                const todays = d.events.filter(e => new Date(e.end) > today && new Date(e.start) < tomorrow);
+                const later = d.events.filter(e => new Date(e.start) >= tomorrow).slice(0, 4);
+                return pvHeader('📅 Today &amp; This Week') + `
+                    <div class="pv-grid cols-2">
+                        <div class="pv-card">
+                            <h2>Today</h2>
+                            ${pvRows(todays.slice(0, 5), e => `
+                                <div class="pv-row">
+                                    <span class="pv-accent">${e.all_day ? 'All day' :
+                                        new Date(e.start).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</span>
+                                    — ${esc(e.title)}
+                                    ${e.location ? `<small>📍 ${esc(e.location)}</small>` : ''}
+                                </div>`, 'Nothing scheduled today')}
+                        </div>
+                        <div class="pv-card">
+                            <h2>Coming up</h2>
+                            ${pvRows(later, e => `
+                                <div class="pv-row">${esc(e.title)}
+                                    <small>${new Date(e.start).toLocaleDateString('en-US',
+                                        { weekday: 'short', month: 'short', day: 'numeric' })}</small>
+                                </div>`, 'Nothing this week')}
+                        </div>
+                    </div>`;
+            }
+
+            if (id === 'meals') {
+                const byDay = {};
+                d.meals.forEach(m => { (byDay[m.date] = byDay[m.date] || []).push(m); });
+                const days = Object.keys(byDay).sort().slice(0, 6);
+                return pvHeader("🍽️ This Week's Meals") + `
+                    <div class="pv-grid" style="grid-template-columns: repeat(${Math.max(days.length, 1)}, 1fr)">
+                        ${days.length ? days.map(date => `
+                            <div class="pv-card">
+                                <h2>${new Date(date + 'T00:00:00').toLocaleDateString('en-US',
+                                    { weekday: 'short' })}</h2>
+                                ${byDay[date].map(m => `
+                                    <div class="pv-row"><small>${esc(m.meal_type || '')}</small>
+                                        ${esc(m.recipe_name || '—')}</div>`).join('')}
+                            </div>`).join('')
+                        : '<div class="pv-card"><div class="pv-empty">No meals planned</div></div>'}
+                    </div>`;
+            }
+
+            if (id === 'grocery') {
+                // Same aisle labels the kiosk uses.
+                const AISLES = {
+                    produce: '🥬 Produce', dairy: '🥛 Dairy', meat: '🥩 Meat',
+                    bakery: '🥖 Bakery', pantry: '🥫 Pantry', frozen: '🧊 Frozen',
+                    other: '📦 Other', generated: '🤖 Generated',
+                };
+                const groups = {};
+                d.grocery.filter(g => !g.checked).forEach(g => {
+                    (groups[g.category || 'other'] = groups[g.category || 'other'] || []).push(g);
+                });
+                const names = Object.keys(groups).sort().slice(0, 6);
+                return pvHeader('🛒 Grocery List') + `
+                    <div class="pv-grid">
+                        ${names.length ? names.map(cat => `
+                            <div class="pv-card">
+                                <h2>${AISLES[cat] || esc(cat)}</h2>
+                                ${groups[cat].slice(0, 5).map(item => `
+                                    <div class="pv-row">☐ ${esc(item.name)}
+                                        ${item.quantity ? `<small>${esc(item.quantity)}</small>` : ''}</div>`).join('')}
+                            </div>`).join('')
+                        : '<div class="pv-card"><div class="pv-empty">Nothing on the list</div></div>'}
+                    </div>`;
+            }
+
+            if (id === 'recipes') {
+                return pvHeader('👨‍🍳 Favourites &amp; Pantry') + `
+                    <div class="pv-grid cols-2">
+                        <div class="pv-card">
+                            <h2>Favourite recipes</h2>
+                            ${pvRows(d.recipes.slice(0, 5), r => `
+                                <div class="pv-row">${esc(r.name)}
+                                    ${r.prep_time || r.cook_time
+                                        ? `<small>${(r.prep_time || 0) + (r.cook_time || 0)} min</small>` : ''}
+                                </div>`, 'No favourites yet')}
+                        </div>
+                        <div class="pv-card">
+                            <h2>Expiring soon</h2>
+                            ${pvRows(d.pantry.slice(0, 5), item => `
+                                <div class="pv-row">${esc(item.name)}
+                                    <small>${item.expiration_date
+                                        ? new Date(item.expiration_date + 'T00:00:00').toLocaleDateString()
+                                        : ''}</small></div>`, 'Nothing expiring')}
+                        </div>
+                    </div>`;
+            }
+
+            if (id === 'photos') {
+                if (!displayPhotos.length) {
+                    return `<div class="pv-photo-stage"><div class="pv-empty"
+                                style="position:absolute;inset:0;display:flex;align-items:center;
+                                       justify-content:center;font-size:2em">
+                                🖼️ Add photos below</div></div>`;
+                }
+                const photo = displayPhotos[previewPhotoIndex % displayPhotos.length];
+                const opts = (displayConfig.screens.find(x => x.id === 'photos') || {}).options || {};
+                return `<div class="pv-photo-stage">
+                            <img class="pv-backdrop" src="${photoSrc(photo)}" alt="">
+                            <img src="${photoSrc(photo)}" alt="${esc(photo.caption || '')}">
+                            ${photo.caption && opts.captions !== false
+                                ? `<div class="pv-caption">${esc(photo.caption)}</div>` : ''}
+                        </div>`;
+            }
+            return '';
+        }
+
+        function renderPreview() {
+            const stage = document.getElementById('preview-stage');
+            if (!stage || !displayConfig) return;
+
+            const theme = collectDisplay().theme;
+            stage.style.setProperty('--pv-primary', theme.primary);
+            stage.style.setProperty('--pv-secondary', theme.secondary);
+            stage.style.setProperty('--pv-text', theme.text);
+            stage.style.setProperty('--pv-accent', theme.accent);
+            stage.style.setProperty('--pv-font', theme.font);
+            stage.style.setProperty('--pv-scale', theme.scale);
+            stage.style.setProperty('--pv-card', `rgba(255, 255, 255, ${theme.card_opacity})`);
+
+            const screens = previewScreens();
+            if (previewIndex >= screens.length) previewIndex = 0;
+            const current = screens[previewIndex];
+            const { time, date } = previewClock();
+            const showDots = document.getElementById('display-indicators').checked && screens.length > 1;
+
+            stage.innerHTML = `
+                <div class="pv-screen active">${previewScreenHtml(current.id)}</div>
+                ${showDots ? `<div class="pv-dots">${screens.map((s, i) =>
+                    `<div class="pv-dot ${i === previewIndex ? 'on' : ''}"></div>`).join('')}</div>` : ''}
+                <div class="pv-saver ${previewSaverOn ? 'on' : ''}">
+                    ${displayPhotos.length ? `
+                        <div class="pv-photo-stage">
+                            <img class="pv-backdrop" src="${photoSrc(displayPhotos[previewPhotoIndex % displayPhotos.length])}" alt="">
+                            <img src="${photoSrc(displayPhotos[previewPhotoIndex % displayPhotos.length])}" alt="">
+                        </div>` : ''}
+                    ${document.getElementById('saver-clock').checked
+                        ? `<div class="pv-saver-clock"><div class="pv-time">${time}</div>
+                           <div class="pv-date">${date}</div></div>` : ''}
+                </div>`;
+
+            document.getElementById('preview-now').textContent = previewSaverOn
+                ? 'Screensaver'
+                : `${SCREEN_LABELS[current.id] || current.id} · ${current.duration || displayConfig.rotation_interval}s`;
+            document.getElementById('preview-saver-btn').textContent =
+                previewSaverOn ? 'Back to screens' : 'Screensaver';
+            fitPreview();
+        }
+
+        function schedulePreview() {
+            clearTimeout(previewTimer);
+            if (!previewPlaying || !displayConfig) return;
+            const screens = previewScreens();
+            if (previewSaverOn || screens[previewIndex].id === 'photos') {
+                // Photo views advance one image at a time, not one screen.
+                const seconds = previewSaverOn
+                    ? (displayConfig.screensaver || {}).interval || 8
+                    : ((screens[previewIndex].options || {}).interval || 8);
+                previewTimer = setTimeout(() => {
+                    previewPhotoIndex++;
+                    if (!previewSaverOn && previewPhotoIndex % Math.max(displayPhotos.length, 1) === 0) {
+                        previewStep(1);
+                        return;
+                    }
+                    renderPreview();
+                    schedulePreview();
+                }, Math.max(2, seconds) * 1000);
+                return;
+            }
+            const seconds = screens[previewIndex].duration || displayConfig.rotation_interval || 30;
+            // Cap the wait so a 5-minute screen doesn't make the preview look stuck.
+            previewTimer = setTimeout(() => previewStep(1), Math.min(seconds, 12) * 1000);
+        }
+
+        function previewStep(delta) {
+            const screens = previewScreens();
+            previewIndex = ((previewIndex + delta) % screens.length + screens.length) % screens.length;
+            previewSaverOn = false;
+            renderPreview();
+            schedulePreview();
+        }
+
+        function togglePreviewPlay() {
+            previewPlaying = !previewPlaying;
+            document.getElementById('preview-play').textContent = previewPlaying ? '⏸' : '▶';
+            schedulePreview();
+        }
+
+        function togglePreviewSaver() {
+            previewSaverOn = !previewSaverOn;
+            renderPreview();
+            schedulePreview();
+        }
+
+        function previewNote() {
+            const note = document.getElementById('preview-note');
+            const base = API_BASE.replace(/\/api$/, '');
+            if (base === DEMO_SERVER) {
+                note.innerHTML = "Close approximation of the Pi's screen, using the demo data. "
+                    + "Connect to your dashboard to preview it with your own.";
+            } else {
+                note.innerHTML = "Close approximation of the Pi's screen. "
+                    + `<a href="${base}/" target="_blank" rel="noopener">Open the real dashboard ↗</a>`;
+            }
         }
 
         // =============================================
@@ -3348,6 +3791,9 @@
             }
             loadRecipes();
         });
+
+        window.addEventListener('resize', fitPreview);
+        window.addEventListener('orientationchange', () => setTimeout(fitPreview, 300));
 
         // Refresh the current tab when the app comes back to the foreground
         document.addEventListener('visibilitychange', () => {

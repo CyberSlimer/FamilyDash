@@ -220,11 +220,24 @@ def _sync_row(item, name=None, quantity=None, category=None):
     return item
 
 
+def _display_quantity(item):
+    """
+    The amount as text.
+
+    Derived from the parsed number so a change to how amounts are written
+    reaches rows saved earlier; the stored string is only a fallback for
+    amounts we never managed to parse ("a few").
+    """
+    if item.qty is not None:
+        return ing.format_amount(item.qty, item.unit or '')
+    return item.quantity or ''
+
+
 def _serialize_grocery(item, pantry_index=None):
     data = {
         'id': item.id,
         'name': item.name,
-        'quantity': item.quantity or '',
+        'quantity': _display_quantity(item),
         'qty': item.qty,
         'unit': item.unit or '',
         'category': item.category,
@@ -244,7 +257,7 @@ def _serialize_pantry(item):
     return {
         'id': item.id,
         'name': item.name,
-        'quantity': item.quantity or '',
+        'quantity': _display_quantity(item),
         'qty': item.qty,
         'unit': item.unit or '',
         'category': item.category,

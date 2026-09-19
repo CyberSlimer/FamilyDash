@@ -343,6 +343,15 @@ class RowNormalizationTests(InventoryTestCase):
         self.assertEqual(row['name'], 'ground beef')
         self.assertEqual(row['quantity'], '2 lb')
 
+    def test_display_text_follows_the_parsed_amount(self):
+        # Rows written before a formatting change must not keep stale text.
+        self.client.post('/api/grocery', json={'name': 'milk', 'quantity': '2 cup'})
+        row_id = self.grocery()[0]['id']
+        stored = dashboard.db.session.get(dashboard.GroceryItem, row_id)
+        stored.quantity = '2 cup'          # how an older version wrote it
+        dashboard.db.session.commit()
+        self.assertEqual(self.grocery()[0]['quantity'], '2 cups')
+
     def test_unparseable_quantity_is_kept_as_text(self):
         self.client.post('/api/grocery', json={'name': 'napkins', 'quantity': 'a few'})
         row = self.grocery()[0]
