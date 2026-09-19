@@ -23,12 +23,38 @@ MOTION_PIN = 27  # PIR motion sensor
 DASHBOARD_URL = "http://localhost:5000"
 
 # Motion sensor settings
-MOTION_TIMEOUT = 300  # 5 minutes - turn off display after no motion
+MOTION_TIMEOUT = int(os.environ.get("MOTION_TIMEOUT", 300))  # display off after no motion
 CHECK_INTERVAL = 1  # Check sensors every second
+CONFIG_POLL_SECONDS = 30  # how often to re-read the display config
 
 # Display control
 DISPLAY_ON = True
 LAST_MOTION = datetime.now()
+
+# Mirrors the screensaver block of /api/display. When the screensaver is on we
+# leave the monitor powered and let the browser show photos instead of cutting
+# the backlight, so the idle display is a photo frame rather than a black rectangle.
+SCREENSAVER = {"enabled": False, "idle_seconds": MOTION_TIMEOUT}
+LAST_CONFIG_FETCH = None
+
+
+def refresh_config():
+    """Pull display settings from the backend; keep the last ones on failure."""
+    global SCREENSAVER, LAST_CONFIG_FETCH
+    LAST_CONFIG_FETCH = datetime.now()
+    try:
+        res = requests.get(f"{DASHBOARD_URL}/api/display", timeout=5)
+        res.raise_for_status()
+        config = res.json().get("config") or {}
+        saver = config.get("screensaver") or {}
+        SCREENSAVER = {
+            "enabled": bool(saver.get("enabled")),
+            "idle_seconds": int(saver.get("idle_seconds", MOTION_TIMEOUT)),
+        }
+        print(f"Display config: screensaver={'on' if SCREENSAVER['enabled'] else 'off'}"
+              f" idle={SCREENSAVER['idle_seconds']}s")
+    except Exception as e:
+        print(f"Could not read display config ({e}); keeping current settings")
 
 # ============================================================================
 # GPIO SETUP
@@ -129,22 +155,45 @@ def button_callback(channel):
 # MOTION SENSOR HANDLER
 # ============================================================================
 
+def wake_browser():
+    """
+    Nudge the page so it drops its screensaver.
+
+    The kiosk treats any keypress as a sign of life; Shift is the one key that
+    changes nothing on screen.
+    """
+    send_keypress('shift')
+
+
 def check_motion():
     """Check motion sensor and control display"""
     global LAST_MOTION, DISPLAY_ON
-    
+
     if GPIO.input(MOTION_PIN):
         # Motion detected
         if not DISPLAY_ON:
             print("Motion detected - waking display")
             turn_display_on()
+        elif SCREENSAVER["enabled"]:
+            idle_time = (datetime.now() - LAST_MOTION).total_seconds()
+            # Only poke the browser if it had time to fall asleep, so we're not
+            # firing xdotool every second someone walks past.
+            if idle_time >= SCREENSAVER["idle_seconds"]:
+                print("Motion detected - waking the dashboard from the screensaver")
+                wake_browser()
         LAST_MOTION = datetime.now()
     else:
         # No motion
         if DISPLAY_ON:
-            idle_time = (datetime.now() - LAST_MOTION).seconds
-            if idle_time > MOTION_TIMEOUT:
-                print(f"No motion for {idle_time}s - turning off display")
+            idle_time = (datetime.now() - LAST_MOTION).total_seconds()
+            if SCREENSAVER["enabled"]:
+                # The photo screensaver is the idle state; the monitor only
+                # powers down long after, to save the panel overnight.
+                if idle_time > max(MOTION_TIMEOUT, SCREENSAVER["idle_seconds"]) * 4:
+                    print(f"No motion for {int(idle_time)}s - turning off display")
+                    turn_display_off()
+            elif idle_time > MOTION_TIMEOUT:
+                print(f"No motion for {int(idle_time)}s - turning off display")
                 turn_display_off()
 
 # ============================================================================
@@ -171,14 +220,22 @@ def main():
     print("Ready!")
     print("- Press button to advance screens")
     print("- Motion sensor will wake display")
+    print("- Display settings are read from the app every "
+          f"{CONFIG_POLL_SECONDS}s")
     print("- Press Ctrl+C to exit")
     print()
     
+    refresh_config()
+
     try:
         while True:
             # Check motion sensor
             check_motion()
-            
+
+            # Pick up display settings changed from the app
+            if (datetime.now() - LAST_CONFIG_FETCH).total_seconds() >= CONFIG_POLL_SECONDS:
+                refresh_config()
+
             # Small delay
             time.sleep(CHECK_INTERVAL)
             

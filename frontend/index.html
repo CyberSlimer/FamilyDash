@@ -5,6 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Family Dashboard</title>
     <style>
+        /* Everything the phone app can restyle lives here; applyTheme() writes
+           these custom properties and the rest of the sheet reads them. */
+        :root {
+            --fd-primary: #667eea;
+            --fd-secondary: #764ba2;
+            --fd-text: #ffffff;
+            --fd-accent: #ffd166;
+            --fd-font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            --fd-card: rgba(255, 255, 255, 0.10);
+            --fd-scale: 1;
+        }
+
         * {
             margin: 0;
             padding: 0;
@@ -12,9 +24,10 @@
         }
 
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
+            font-family: var(--fd-font);
+            background: linear-gradient(135deg, var(--fd-primary) 0%, var(--fd-secondary) 100%);
+            color: var(--fd-text);
+            font-size: calc(16px * var(--fd-scale));
             overflow: hidden;
             cursor: none; /* Hide cursor in kiosk mode */
         }
@@ -107,7 +120,7 @@
         }
 
         .card {
-            background: rgba(255, 255, 255, 0.1);
+            background: var(--fd-card);
             backdrop-filter: blur(10px);
             border-radius: 20px;
             padding: 30px;
@@ -282,7 +295,7 @@
         }
 
         .forecast-item {
-            background: rgba(255, 255, 255, 0.1);
+            background: var(--fd-card);
             padding: 15px;
             border-radius: 10px;
             text-align: center;
@@ -330,7 +343,7 @@
         }
 
         .meal-day {
-            background: rgba(255, 255, 255, 0.1);
+            background: var(--fd-card);
             border-radius: 15px;
             padding: 20px;
             min-height: 300px;
@@ -384,7 +397,7 @@
         }
 
         .grocery-category {
-            background: rgba(255, 255, 255, 0.1);
+            background: var(--fd-card);
             border-radius: 15px;
             padding: 25px;
         }
@@ -454,7 +467,7 @@
         }
 
         .recipe-card {
-            background: rgba(255, 255, 255, 0.1);
+            background: var(--fd-card);
             border-radius: 15px;
             overflow: hidden;
             transition: transform 0.2s;
@@ -493,7 +506,7 @@
         }
 
         .pantry-item {
-            background: rgba(255, 255, 255, 0.1);
+            background: var(--fd-card);
             padding: 15px;
             border-radius: 10px;
         }
@@ -535,11 +548,110 @@
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
+
+        /* ---- Photo slideshow (a rotating screen, and the idle screensaver) ---- */
+        .photo-stage {
+            position: absolute;
+            inset: 0;
+            background: #000;
+            overflow: hidden;
+        }
+
+        .photo-stage img {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            opacity: 0;
+            transition: opacity 1.2s ease-in-out;
+        }
+
+        .photo-stage img.showing {
+            opacity: 1;
+        }
+
+        /* A blurred copy of the same photo fills the bars either side of a
+           portrait shot on a landscape monitor. */
+        .photo-stage img.backdrop {
+            object-fit: cover;
+            filter: blur(28px) brightness(0.45);
+            transform: scale(1.1);
+        }
+
+        .photo-caption {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            padding: 60px 50px 40px;
+            font-size: 2em;
+            font-weight: 300;
+            text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
+            background: linear-gradient(transparent, rgba(0, 0, 0, 0.65));
+            opacity: 0;
+            transition: opacity 0.8s ease;
+        }
+
+        .photo-caption.showing { opacity: 1; }
+
+        .photo-empty {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 18px;
+            text-align: center;
+            font-size: 1.6em;
+            font-weight: 300;
+            opacity: 0.75;
+        }
+
+        .photo-empty .photo-empty-icon { font-size: 3em; }
+
+        #screen-photos { padding: 0; position: relative; }
+
+        /* Screensaver sits above everything; the dashboard stays put behind it. */
+        #screensaver {
+            position: fixed;
+            inset: 0;
+            z-index: 50;
+            background: #000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 1.5s ease;
+        }
+
+        #screensaver.showing {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .screensaver-clock {
+            position: absolute;
+            left: 50px;
+            bottom: 40px;
+            text-shadow: 0 2px 16px rgba(0, 0, 0, 0.9);
+        }
+
+        .screensaver-clock .time {
+            font-size: 5em;
+            font-weight: 200;
+            line-height: 1;
+        }
+
+        .screensaver-clock .date {
+            font-size: 1.6em;
+            font-weight: 300;
+            opacity: 0.85;
+        }
     </style>
 </head>
 <body>
     <!-- Screen 1: Calendar & Weather -->
-    <div class="screen active" id="screen-0">
+    <div class="screen active" id="screen-0" data-screen-id="calendar">
         <div class="header">
             <h1>📅 Today's Schedule</h1>
             <div class="datetime">
@@ -564,7 +676,7 @@
     </div>
 
     <!-- Screen 2: Meal Plan -->
-    <div class="screen" id="screen-1">
+    <div class="screen" id="screen-1" data-screen-id="meals">
         <div class="header">
             <h1>🍽️ This Week's Meals</h1>
             <div class="datetime">
@@ -580,7 +692,7 @@
     </div>
 
     <!-- Screen 3: Grocery List -->
-    <div class="screen" id="screen-2">
+    <div class="screen" id="screen-2" data-screen-id="grocery">
         <div class="header">
             <h1>🛒 Grocery List</h1>
             <div class="datetime">
@@ -596,7 +708,7 @@
     </div>
 
     <!-- Screen 4: Recipes & Pantry -->
-    <div class="screen" id="screen-3">
+    <div class="screen" id="screen-3" data-screen-id="recipes">
         <div class="header">
             <h1>👨‍🍳 Favorite Recipes & Pantry</h1>
             <div class="datetime">
@@ -617,60 +729,300 @@
         </div>
     </div>
 
-    <!-- Screen indicators -->
-    <div class="screen-indicator">
-        <div class="indicator-dot active" data-screen="0"></div>
-        <div class="indicator-dot" data-screen="1"></div>
-        <div class="indicator-dot" data-screen="2"></div>
-        <div class="indicator-dot" data-screen="3"></div>
+    <!-- Photos (enabled from the app; hidden until then) -->
+    <div class="screen" id="screen-photos" data-screen-id="photos">
+        <div class="photo-stage" id="photo-stage">
+            <div class="photo-empty" id="photo-empty">
+                <div class="photo-empty-icon">🖼️</div>
+                <div>No photos yet — add some from the Family Dashboard app</div>
+            </div>
+        </div>
+        <div class="photo-caption" id="photo-caption"></div>
     </div>
 
+    <!-- Idle screensaver -->
+    <div id="screensaver">
+        <div class="photo-stage" id="saver-stage"></div>
+        <div class="screensaver-clock" id="saver-clock">
+            <div class="time" id="saver-time">--:--</div>
+            <div class="date" id="saver-date"></div>
+        </div>
+    </div>
+
+    <!-- Screen indicators (rebuilt from the display config) -->
+    <div class="screen-indicator" id="screen-indicator"></div>
+
     <script>
-        const API_BASE = 'http://localhost:5000/api';
-        let currentScreen = 0;
-        let rotationInterval;
+        // The Pi serves this page, so the API is on the same origin. That keeps
+        // working when API_PORT in config.env is changed; the localhost fallback
+        // is only for opening the file directly during development.
+        const API_BASE = window.location.protocol.startsWith('http')
+            ? `${window.location.origin}/api`
+            : 'http://localhost:5000/api';
+
+        // =============================================
+        // DISPLAY CONFIG
+        // =============================================
+        // Everything about how this screen looks and behaves comes from
+        // /api/display, which the phone app writes. We poll a cheap revision
+        // endpoint so edits show up on the wall within seconds.
+
+        const DEFAULT_CONFIG = {
+            rotation_interval: 30,
+            clock_24h: false,
+            show_indicators: true,
+            theme: {
+                primary: '#667eea', secondary: '#764ba2', text: '#ffffff',
+                accent: '#ffd166', card_opacity: 0.1, scale: 1,
+                font: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+            },
+            screens: [
+                { id: 'calendar', enabled: true, duration: null },
+                { id: 'meals', enabled: true, duration: null },
+                { id: 'grocery', enabled: true, duration: null },
+                { id: 'recipes', enabled: true, duration: null },
+                { id: 'photos', enabled: false, duration: 60,
+                  options: { interval: 8, shuffle: true, captions: true } },
+            ],
+            screensaver: { enabled: false, idle_seconds: 300, interval: 8, shuffle: true, show_clock: true },
+        };
+
+        let CONFIG = DEFAULT_CONFIG;
+        let PHOTOS = [];
+        let revision = -1;
+        let rotation = [];        // enabled screens, in order
+        let currentIndex = 0;
+        let rotationTimer = null;
         let lastInteraction = Date.now();
+
+        // Kept so older code (and the hardware controller's key presses) that
+        // talks in screen numbers still works.
+        let currentScreen = 0;
+
+        function screenEl(id) {
+            return document.querySelector(`.screen[data-screen-id="${id}"]`);
+        }
+
+        async function loadDisplayConfig() {
+            try {
+                const res = await fetch(`${API_BASE}/display`, { cache: 'no-store' });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const data = await res.json();
+                CONFIG = data.config || DEFAULT_CONFIG;
+                PHOTOS = data.photos || [];
+                revision = data.revision;
+            } catch (err) {
+                console.warn('Using default display config:', err.message);
+                CONFIG = DEFAULT_CONFIG;
+            }
+            applyTheme(CONFIG.theme || {});
+            buildRotation();
+        }
+
+        function applyTheme(theme) {
+            const root = document.documentElement.style;
+            const t = Object.assign({}, DEFAULT_CONFIG.theme, theme || {});
+            root.setProperty('--fd-primary', t.primary);
+            root.setProperty('--fd-secondary', t.secondary);
+            root.setProperty('--fd-text', t.text);
+            root.setProperty('--fd-accent', t.accent);
+            root.setProperty('--fd-font', t.font);
+            root.setProperty('--fd-scale', t.scale);
+            root.setProperty('--fd-card', `rgba(255, 255, 255, ${t.card_opacity})`);
+        }
+
+        function buildRotation() {
+            const screens = (CONFIG.screens || []).filter(s => s.enabled && screenEl(s.id));
+            // Never leave the wall blank: if everything was switched off, fall
+            // back to the calendar.
+            rotation = screens.length ? screens : [{ id: 'calendar', duration: null }];
+
+            const bar = document.getElementById('screen-indicator');
+            bar.style.display = (CONFIG.show_indicators === false || rotation.length < 2) ? 'none' : '';
+            bar.innerHTML = rotation.map((s, i) =>
+                `<div class="indicator-dot${i === 0 ? ' active' : ''}" data-screen="${i}"></div>`).join('');
+
+            if (currentIndex >= rotation.length) currentIndex = 0;
+            showIndex(currentIndex);
+        }
 
         // =============================================
         // SCREEN ROTATION
         // =============================================
 
-        function showScreen(screenIndex) {
-            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+        function showIndex(index) {
+            if (!rotation.length) return;
+            currentIndex = ((index % rotation.length) + rotation.length) % rotation.length;
+            const target = rotation[currentIndex];
+
+            document.querySelectorAll('.screen').forEach(el => el.classList.remove('active'));
             document.querySelectorAll('.indicator-dot').forEach(d => d.classList.remove('active'));
-            
-            document.getElementById(`screen-${screenIndex}`).classList.add('active');
-            document.querySelector(`.indicator-dot[data-screen="${screenIndex}"]`).classList.add('active');
-            
-            currentScreen = screenIndex;
+
+            const el = screenEl(target.id);
+            if (el) el.classList.add('active');
+            const dot = document.querySelector(`.indicator-dot[data-screen="${currentIndex}"]`);
+            if (dot) dot.classList.add('active');
+
+            currentScreen = currentIndex;
             refreshCurrentScreen();
+            startRotation();               // restart the clock for this screen's duration
         }
 
-        function nextScreen() {
-            currentScreen = (currentScreen + 1) % 4;
-            showScreen(currentScreen);
-        }
-
-        function previousScreen() {
-            currentScreen = (currentScreen - 1 + 4) % 4;
-            showScreen(currentScreen);
-        }
+        function showScreen(index) { showIndex(index); }
+        function nextScreen() { showIndex(currentIndex + 1); }
+        function previousScreen() { showIndex(currentIndex - 1); }
 
         function startRotation() {
             stopRotation();
-            rotationInterval = setInterval(() => {
-                // Check if inactive (for motion sensor)
-                const inactiveTime = Date.now() - lastInteraction;
-                if (inactiveTime < 300000) { // 5 minutes
-                    nextScreen();
-                }
-            }, 30000); // 30 seconds
+            if (rotation.length < 2) return;
+            const screen = rotation[currentIndex] || {};
+            const seconds = screen.duration || CONFIG.rotation_interval || 30;
+            rotationTimer = setTimeout(() => {
+                // Don't rotate behind the screensaver; it has its own slideshow.
+                if (!saverVisible) nextScreen(); else startRotation();
+            }, seconds * 1000);
         }
 
         function stopRotation() {
-            if (rotationInterval) {
-                clearInterval(rotationInterval);
+            if (rotationTimer) { clearTimeout(rotationTimer); rotationTimer = null; }
+        }
+
+        // =============================================
+        // PHOTO SLIDESHOW
+        // =============================================
+        // Used twice: as a rotating screen, and as the idle screensaver.
+
+        function makeSlideshow(stageEl, getOptions) {
+            let order = [];
+            let position = 0;
+            let timer = null;
+            let showing = null;       // {backdrop, img} currently faded in
+
+            function shuffled(list) {
+                const copy = list.slice();
+                for (let i = copy.length - 1; i > 0; i--) {
+                    const j = Math.floor(Math.random() * (i + 1));
+                    [copy[i], copy[j]] = [copy[j], copy[i]];
+                }
+                return copy;
             }
+
+            function reset() {
+                const opts = getOptions();
+                order = opts.shuffle ? shuffled(PHOTOS) : PHOTOS.slice();
+                position = 0;
+                stageEl.querySelectorAll('img').forEach(n => n.remove());
+                showing = null;
+            }
+
+            function render(photo) {
+                const opts = getOptions();
+                const backdrop = document.createElement('img');
+                backdrop.className = 'backdrop';
+                backdrop.src = photo.url;
+                const img = document.createElement('img');
+                img.src = photo.url;
+                img.alt = photo.caption || '';
+                stageEl.append(backdrop, img);
+
+                // Let the browser paint at opacity 0 before fading in.
+                requestAnimationFrame(() => requestAnimationFrame(() => {
+                    backdrop.classList.add('showing');
+                    img.classList.add('showing');
+                }));
+
+                const previous = showing;
+                showing = { backdrop, img };
+                if (previous) {
+                    previous.img.classList.remove('showing');
+                    previous.backdrop.classList.remove('showing');
+                    setTimeout(() => {
+                        previous.img.remove();
+                        previous.backdrop.remove();
+                    }, 1400);
+                }
+
+                const caption = stageEl.parentElement.querySelector('.photo-caption');
+                if (caption) {
+                    const text = opts.captions === false ? '' : (photo.caption || '');
+                    caption.textContent = text;
+                    caption.classList.toggle('showing', !!text);
+                }
+            }
+
+            function advance() {
+                if (!order.length) return;
+                render(order[position % order.length]);
+                position++;
+            }
+
+            return {
+                start() {
+                    this.stop();
+                    const empty = stageEl.parentElement.querySelector('.photo-empty');
+                    if (empty) empty.style.display = PHOTOS.length ? 'none' : '';
+                    if (!PHOTOS.length) return;
+                    if (!order.length) reset();
+                    advance();
+                    const seconds = Math.max(2, getOptions().interval || 8);
+                    timer = setInterval(advance, seconds * 1000);
+                },
+                stop() {
+                    if (timer) { clearInterval(timer); timer = null; }
+                },
+                refresh() { reset(); },
+            };
+        }
+
+        function photoScreenOptions() {
+            const screen = (CONFIG.screens || []).find(s => s.id === 'photos') || {};
+            return screen.options || { interval: 8, shuffle: true, captions: true };
+        }
+
+        const photoScreen = makeSlideshow(
+            document.getElementById('photo-stage'), photoScreenOptions);
+        const screensaver = makeSlideshow(
+            document.getElementById('saver-stage'), () => CONFIG.screensaver || {});
+
+        // =============================================
+        // SCREENSAVER
+        // =============================================
+
+        let saverVisible = false;
+
+        function showScreensaver() {
+            if (saverVisible || !PHOTOS.length) return;
+            saverVisible = true;
+            screensaver.refresh();
+            screensaver.start();
+            const clock = document.getElementById('saver-clock');
+            clock.style.display = (CONFIG.screensaver || {}).show_clock === false ? 'none' : '';
+            document.getElementById('screensaver').classList.add('showing');
+        }
+
+        function hideScreensaver() {
+            if (!saverVisible) return;
+            saverVisible = false;
+            document.getElementById('screensaver').classList.remove('showing');
+            screensaver.stop();
+            startRotation();
+        }
+
+        function checkIdle() {
+            const saver = CONFIG.screensaver || {};
+            if (!saver.enabled || !PHOTOS.length) {
+                if (saverVisible) hideScreensaver();
+                return;
+            }
+            const idleSeconds = (Date.now() - lastInteraction) / 1000;
+            if (idleSeconds >= (saver.idle_seconds || 300)) showScreensaver();
+        }
+
+        // Any sign of life wakes the wall. The hardware controller sends a
+        // keypress on motion, which lands here too.
+        function noteInteraction() {
+            lastInteraction = Date.now();
+            hideScreensaver();
         }
 
         // =============================================
@@ -679,22 +1031,26 @@
 
         function updateDateTime() {
             const now = new Date();
-            const timeStr = now.toLocaleTimeString('en-US', { 
-                hour: 'numeric', 
+            const timeStr = now.toLocaleTimeString('en-US', {
+                hour: 'numeric',
                 minute: '2-digit',
-                hour12: true 
+                hour12: !CONFIG.clock_24h
             });
-            const dateStr = now.toLocaleDateString('en-US', { 
-                weekday: 'long', 
-                month: 'long', 
+            const dateStr = now.toLocaleDateString('en-US', {
+                weekday: 'long',
+                month: 'long',
                 day: 'numeric',
                 year: 'numeric'
             });
 
             for (let i = 0; i < 4; i++) {
-                document.getElementById(`time-${i}`).textContent = timeStr;
-                document.getElementById(`date-${i}`).textContent = dateStr;
+                const time = document.getElementById(`time-${i}`);
+                const date = document.getElementById(`date-${i}`);
+                if (time) time.textContent = timeStr;
+                if (date) date.textContent = dateStr;
             }
+            document.getElementById('saver-time').textContent = timeStr;
+            document.getElementById('saver-date').textContent = dateStr;
         }
 
         // =============================================
@@ -1023,18 +1379,24 @@
         }
 
         function refreshCurrentScreen() {
-            switch (currentScreen) {
-                case 0:
+            const screen = rotation[currentIndex];
+            if (!screen) return;
+            // The photo screen owns its own timer; every other screen stops it
+            // so a hidden slideshow isn't churning through images.
+            if (screen.id === 'photos') photoScreen.start(); else photoScreen.stop();
+
+            switch (screen.id) {
+                case 'calendar':
                     fetchCalendarEvents();
                     fetchWeather();
                     break;
-                case 1:
+                case 'meals':
                     fetchMealPlan();
                     break;
-                case 2:
+                case 'grocery':
                     fetchGroceryList();
                     break;
-                case 3:
+                case 'recipes':
                     fetchRecipesAndPantry();
                     break;
             }
@@ -1045,15 +1407,18 @@
         // =============================================
 
         document.addEventListener('keydown', (e) => {
-            lastInteraction = Date.now();
-            
+            const wasAsleep = saverVisible;
+            noteInteraction();
+            // The first press after the screensaver only wakes the display.
+            if (wasAsleep) { e.preventDefault(); return; }
+
             if (e.key === 'ArrowRight' || e.key === ' ') {
                 e.preventDefault();
                 nextScreen();
             } else if (e.key === 'ArrowLeft') {
                 e.preventDefault();
                 previousScreen();
-            } else if (e.key >= '1' && e.key <= '4') {
+            } else if (e.key >= '1' && e.key <= '9') {
                 e.preventDefault();
                 showScreen(parseInt(e.key) - 1);
             } else if (e.key === 'r' || e.key === 'R') {
@@ -1063,27 +1428,48 @@
         });
 
         // Touch/click for manual navigation
-        document.addEventListener('click', () => {
-            lastInteraction = Date.now();
-        });
+        document.addEventListener('click', noteInteraction);
+        document.addEventListener('touchstart', noteInteraction, { passive: true });
+        document.addEventListener('mousemove', noteInteraction);
 
         // =============================================
         // INITIALIZATION
         // =============================================
 
-        function init() {
+        const CONFIG_POLL_MS = 15000;     // how soon an edit in the app lands here
+        const DATA_REFRESH_MS = 300000;
+
+        async function pollConfig() {
+            try {
+                const res = await fetch(`${API_BASE}/display/revision`, { cache: 'no-store' });
+                if (!res.ok) return;
+                const { revision: latest } = await res.json();
+                if (latest === revision) return;
+
+                const wasShowing = rotation[currentIndex] && rotation[currentIndex].id;
+                await loadDisplayConfig();
+                photoScreen.refresh();
+                screensaver.refresh();
+                // Stay on the screen we were showing if it survived the edit.
+                const index = rotation.findIndex(s => s.id === wasShowing);
+                showIndex(index >= 0 ? index : 0);
+            } catch (err) {
+                /* Pi backend restarting; try again on the next tick. */
+            }
+        }
+
+        async function init() {
+            await loadDisplayConfig();
+
             updateDateTime();
             setInterval(updateDateTime, 1000);
-            
+
             refreshCurrentScreen();
-            
-            // Refresh data every 5 minutes
-            setInterval(() => {
-                refreshCurrentScreen();
-            }, 300000);
-            
-            // Start screen rotation
+            setInterval(refreshCurrentScreen, DATA_REFRESH_MS);
+
             startRotation();
+            setInterval(pollConfig, CONFIG_POLL_MS);
+            setInterval(checkIdle, 5000);
         }
 
         // Start when page loads
