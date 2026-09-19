@@ -208,6 +208,11 @@ path that offers to create the record for you during Upload.
 
 The build appears under **TestFlight** in App Store Connect after ~10–30 min of processing.
 
+Build 1 (2026-09-18) drew an App Store Connect warning that the minimum iOS version was too low —
+the project shipped with Capacitor's default `IPHONEOS_DEPLOYMENT_TARGET = 13.0`. Fixed for build 2:
+target and Podfile are on **iOS 15.0** (the Podfile's `post_install` pins the Capacitor pods to
+match). Keep it at 15 or higher for future builds.
+
 ---
 
 ## 9a. Route A — TestFlight internal testers
