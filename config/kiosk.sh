@@ -9,6 +9,13 @@
 
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# Started from an XDG autostart entry, this script has nowhere to print: the
+# session swallows stdout, so a failed boot leaves no trace anywhere. Keep a
+# log of our own.
+KIOSK_LOG="${XDG_RUNTIME_DIR:-/tmp}/familydash-kiosk.log"
+exec >> "$KIOSK_LOG" 2>&1
+echo "=== kiosk starting $(date '+%Y-%m-%d %H:%M:%S') ==="
+
 # Follow API_PORT from config.env like the rest of the system, instead of
 # hardcoding 5000 in a second place.
 PORT=5000
@@ -18,6 +25,42 @@ if [ -f "$APP_DIR/config.env" ]; then
     [ -n "$configured" ] && PORT="$configured"
 fi
 URL="http://localhost:$PORT"
+
+# Wait for the desktop session before anything else. Under an XDG autostart
+# entry this script can run while labwc is still assembling the session, and
+# a Chromium that connects that early gets a surface it never paints: a plain
+# white screen, with nothing in any log to say why. The original script's
+# blanket `sleep 10` covered this by accident; polling for actual readiness
+# keeps a warm start fast and still waits as long as a cold boot needs.
+wait_for_display() {
+    local runtime="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+    local i
+    for i in $(seq 1 60); do
+        if [ -n "$WAYLAND_DISPLAY" ] && [ -S "$runtime/$WAYLAND_DISPLAY" ]; then
+            # The socket appears before any output is configured, so ask
+            # whether something is actually lit before handing over.
+            if command -v wlr-randr > /dev/null 2>&1; then
+                wlr-randr 2>/dev/null | grep -q 'Enabled: yes' && return 0
+            else
+                return 0
+            fi
+        elif [ -n "$DISPLAY" ] && xset q > /dev/null 2>&1; then
+            return 0
+        fi
+        sleep 1
+    done
+    return 1
+}
+
+if wait_for_display; then
+    echo "display ready"
+else
+    echo "display not ready after 60s - launching anyway"
+fi
+
+# An output being live is not the same as the session being settled: labwc is
+# still bringing up the panel and desktop behind us.
+sleep 5
 
 # Wait for the backend to answer rather than sleeping a fixed 10 seconds.
 # /api/health is the same endpoint the phone app uses to verify a server, so
