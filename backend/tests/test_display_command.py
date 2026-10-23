@@ -116,5 +116,40 @@ class DisplayCommandTests(unittest.TestCase):
         self.assertIsNone(body['index'])
 
 
+class KioskLivenessTests(unittest.TestCase):
+    """`kiosk_last_seen_seconds` is how kiosk.sh decides whether the wall
+    display actually came up, so it has to mean exactly one thing: a browser
+    polled for a command recently."""
+
+    def setUp(self):
+        dashboard.app.config['TESTING'] = True
+        self.client = dashboard.app.test_client()
+        dashboard._kiosk_last_seen = None
+
+    def health(self):
+        return self.client.get('/api/health').get_json()
+
+    def test_null_until_a_kiosk_has_ever_polled(self):
+        self.assertIsNone(self.health()['kiosk_last_seen_seconds'])
+
+    def test_a_poll_marks_the_kiosk_alive(self):
+        self.client.get('/api/display/command')
+        age = self.health()['kiosk_last_seen_seconds']
+        self.assertIsNotNone(age)
+        self.assertLess(age, 5)
+
+    def test_posting_a_command_does_not_count_as_a_kiosk(self):
+        # The hardware controller posts; only the wall display polls. If a
+        # POST counted, a button press would convince kiosk.sh that a dead
+        # screen was healthy.
+        self.client.post('/api/display/command', json={'action': 'next'})
+        self.assertIsNone(self.health()['kiosk_last_seen_seconds'])
+
+    def test_age_grows_as_time_passes(self):
+        self.client.get('/api/display/command')
+        dashboard._kiosk_last_seen -= 120  # monotonic seconds
+        self.assertGreater(self.health()['kiosk_last_seen_seconds'], 100)
+
+
 if __name__ == '__main__':
     unittest.main()

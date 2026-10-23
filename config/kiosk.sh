@@ -154,4 +154,46 @@ if [ -n "$WAYLAND_DISPLAY" ]; then
     FLAGS+=(--ozone-platform=wayland)
 fi
 
+# Launch, then check that the wall actually came up, and restart it if not.
+#
+# Chromium is not reliably able to start during a Pi's boot: its network
+# service sometimes dies on the way up ("Network service crashed or was
+# terminated"), after which the page can fetch nothing, nothing paints, and
+# the display sits white with no error that systemd or this script can see.
+# The same command run a minute later works every time, so rather than try to
+# predict the hostile window, verify the outcome and have another go.
+#
+# The backend records when a kiosk last asked it for a screen command. The
+# page polls every second, so a recent value is proof that a browser is up,
+# rendering, and running its JavaScript - far stronger evidence than the
+# browser process merely existing, which it does even when the screen is blank.
+kiosk_is_live() {
+    local age
+    age=$(curl -fsS --max-time 4 "$URL/api/health" 2>/dev/null \
+          | sed -n 's/.*"kiosk_last_seen_seconds":[[:space:]]*\([0-9][0-9.]*\).*/\1/p')
+    [ -n "$age" ] && [ "${age%%.*}" -lt 30 ]
+}
+
+for attempt in 1 2 3; do
+    echo "launching $BROWSER (attempt $attempt)"
+    "$BROWSER" "${FLAGS[@]}" "$URL" &
+    browser_pid=$!
+
+    # Chromium needs a good while to paint on a Pi; only after that does a
+    # missing poll mean anything is actually wrong.
+    sleep 45
+
+    if kiosk_is_live; then
+        echo "kiosk is live"
+        wait "$browser_pid"
+        exit $?
+    fi
+
+    echo "no sign of the kiosk after 45s - restarting the browser"
+    kill "$browser_pid" 2>/dev/null
+    pkill -x "$(basename "$BROWSER")" 2>/dev/null
+    sleep 5
+done
+
+echo "kiosk still not responding after 3 attempts - leaving the last one up"
 exec "$BROWSER" "${FLAGS[@]}" "$URL"

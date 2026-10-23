@@ -15,6 +15,7 @@ from bs4 import BeautifulSoup
 import json
 import re
 import threading
+import time
 import uuid
 from urllib.parse import urlparse
 
@@ -1552,6 +1553,12 @@ DISPLAY_COMMANDS = ('next', 'prev', 'refresh', 'wake', 'screen')
 _display_command = {'seq': 0, 'action': None, 'index': None}
 _display_command_lock = threading.Lock()
 
+# When a kiosk last asked for a command. The wall polls every second, so a
+# stale value means nothing is displaying the dashboard - which kiosk.sh
+# uses to decide whether its browser actually came up.  Monotonic, so a
+# clock step during boot cannot make this look fresh.
+_kiosk_last_seen = None
+
 
 @app.route('/api/display/command', methods=['GET', 'POST'])
 def display_command():
@@ -1564,7 +1571,9 @@ def display_command():
     global _display_command
 
     if request.method == 'GET':
+        global _kiosk_last_seen
         with _display_command_lock:
+            _kiosk_last_seen = time.monotonic()
             return jsonify(dict(_display_command))
 
     data = request.get_json(silent=True) or {}
@@ -1772,12 +1781,18 @@ APP_VERSION = '1.0.0'
 def health():
     """Used by the iOS app / PWA to find and verify a dashboard server."""
     import socket
+    # None means no kiosk has ever polled since this process started; a large
+    # number means the wall display has stopped talking to us. kiosk.sh reads
+    # this to tell whether its browser actually came up.
+    kiosk_age = (None if _kiosk_last_seen is None
+                 else round(time.monotonic() - _kiosk_last_seen, 1))
     return jsonify({
         'app': 'familydash',
         'version': APP_VERSION,
         'hostname': socket.gethostname(),
         'location': LOCATION_NAME,
         'calendars': len(calendar_sync.calendars),
+        'kiosk_last_seen_seconds': kiosk_age,
         'time': datetime.now().astimezone().isoformat(),
     })
 
