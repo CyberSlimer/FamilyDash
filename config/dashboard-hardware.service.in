@@ -1,0 +1,18 @@
+[Unit]
+Description=Family Dashboard Hardware Controller
+# The controller polls /api/display, so it needs the backend, not the network.
+After=dashboard-backend.service
+Wants=dashboard-backend.service
+
+[Service]
+Type=simple
+User=@@RUN_USER@@
+WorkingDirectory=@@APP_DIR@@/hardware
+ExecStart=@@PYTHON@@ @@APP_DIR@@/hardware/controller.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

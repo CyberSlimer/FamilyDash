@@ -1,0 +1,19 @@
+[Unit]
+Description=Family Dashboard Backend API
+# The backend fetches calendars and weather on startup, so wait for real
+# connectivity rather than just for the network stack to exist.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@@RUN_USER@@
+WorkingDirectory=@@APP_DIR@@/backend
+ExecStart=@@PYTHON@@ @@APP_DIR@@/backend/app.py
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

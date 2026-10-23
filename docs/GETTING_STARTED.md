@@ -61,9 +61,11 @@ family-dashboard/
 │   └── controller.py              # GPIO control (230 lines)
 │
 ├── config/
-│   ├── dashboard-backend.service
-│   ├── dashboard-hardware.service
-│   └── kiosk.sh
+│   ├── dashboard-backend.service.in   # systemd template (paths filled in at install)
+│   ├── dashboard-hardware.service.in
+│   ├── install-services.sh            # renders the templates for this machine
+│   ├── calendars.example.json
+│   └── kiosk.sh                       # full-screen browser, X11 and Wayland
 │
 └── docs/
     ├── QUICKSTART.md              # 30-min setup guide
@@ -81,11 +83,11 @@ family-dashboard/
 
 ### Step 2: Software Installation (15 min)
 ```bash
-# Copy files to Raspberry Pi
+# Clone onto the Pi - any location, any account name
 cd ~
-cp -r /path/to/family-dashboard .
+git clone https://github.com/CyberSlimer/FamilyDash.git family-dashboard
 
-# Run installation
+# Run installation as your normal user, NOT with sudo
 cd family-dashboard
 chmod +x install.sh
 ./install.sh
@@ -93,6 +95,9 @@ chmod +x install.sh
 # Reboot
 sudo reboot
 ```
+
+The installer discovers your username and the checkout path itself, so nothing
+has to live in `/home/pi`. Re-running it is safe and preserves your data.
 
 ### Step 3: First Use (5 min)
 1. Dashboard auto-launches in full screen

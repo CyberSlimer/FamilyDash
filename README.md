@@ -96,12 +96,11 @@ Pin 6        | GND  | Button & PIR GND
 ### Quick Install
 
 ```bash
-# 1. Copy files to Raspberry Pi
+# 1. Clone onto the Raspberry Pi (anywhere you like, under any account)
 cd ~
 git clone https://github.com/CyberSlimer/FamilyDash.git family-dashboard
-# Or copy the files directly to /home/pi/family-dashboard
 
-# 2. Run installation script
+# 2. Run the installation script as your normal user - NOT with sudo
 cd family-dashboard
 chmod +x install.sh
 ./install.sh
@@ -110,44 +109,69 @@ chmod +x install.sh
 sudo reboot
 ```
 
+`install.sh` works out the account name and the checkout path for itself, so
+the dashboard does not have to live in `/home/pi` and the account does not have
+to be called `pi`. (Raspberry Pi OS stopped creating a default `pi` user in
+2022.) It is also safe to re-run: it keeps your database, your photos and your
+`config/calendars.json`, so it doubles as a repair tool if you move the folder.
+
+Python packages go into a virtualenv at `.venv/` inside the checkout, created
+with `--system-site-packages` so apt's `python3-rpi.gpio` stays importable. The
+systemd units are generated from the templates in `config/*.service.in` with
+your real paths substituted in.
+
+### Which desktop session you have matters
+
+The kiosk auto-start is installed as an XDG autostart entry at
+`~/.config/autostart/familydash-kiosk.desktop`, which Raspberry Pi OS honours
+under all three session types it has shipped - LXDE/X11 on Bullseye and
+earlier, and Wayland (wayfire, then labwc) on Bookworm and later. If the
+dashboard does not appear full-screen after a reboot, see
+[the kiosk troubleshooting notes](#the-kiosk-doesnt-start-on-boot) below.
+
 ### Manual Installation
 
-```bash
-# 1. Install system packages
-sudo apt-get update
-sudo apt-get upgrade -y
-sudo apt-get install -y python3 python3-pip python3-dev python3-rpi.gpio \
-    chromium-browser unclutter xdotool
+Only needed if you want to understand or adjust what `install.sh` does.
 
-# 2. Install Python dependencies
-cd ~/family-dashboard/backend
-pip3 install -r requirements.txt --break-system-packages
+```bash
+cd ~/family-dashboard
+
+# 1. Install system packages. On Bookworm and later the Chromium package is
+#    named `chromium`; before that, `chromium-browser`.
+sudo apt-get update
+sudo apt-get install -y python3 python3-pip python3-dev python3-venv curl git \
+    chromium-browser python3-rpi.gpio
+sudo apt-get install -y unclutter xdotool   # X11 sessions only; skip on Wayland
+
+# 2. Create the virtualenv and install Python dependencies
+python3 -m venv --system-site-packages .venv
+.venv/bin/pip install -r backend/requirements.txt
 
 # 3. Initialize database
-python3 -c "from app import init_db; init_db()"
+cd backend && ../.venv/bin/python -c "from app import init_db; init_db()" && cd ..
 
-# 4. Install services
-sudo cp config/dashboard-backend.service /etc/systemd/system/
-sudo cp config/dashboard-hardware.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable dashboard-backend.service
-sudo systemctl enable dashboard-hardware.service
-sudo systemctl start dashboard-backend.service
-sudo systemctl start dashboard-hardware.service
+# 4. Configuration and photo storage
+cp config/calendars.example.json config/calendars.json
+mkdir -p backend/photos
 
-# 5. Setup kiosk mode
-mkdir -p ~/.config/lxsession/LXDE-pi
-cat > ~/.config/lxsession/LXDE-pi/autostart << EOF
-@lxpanel --profile LXDE-pi
-@pcmanfm --desktop --profile LXDE-pi
-@/home/pi/family-dashboard/config/kiosk.sh
+# 5. Render and install the systemd units for this machine
+chmod +x config/kiosk.sh config/install-services.sh hardware/controller.py
+./config/install-services.sh
+sudo systemctl enable --now dashboard-backend.service
+sudo systemctl enable --now dashboard-hardware.service
+
+# 6. Set up the kiosk auto-start
+mkdir -p ~/.config/autostart
+cat > ~/.config/autostart/familydash-kiosk.desktop << EOF
+[Desktop Entry]
+Type=Application
+Name=Family Dashboard Kiosk
+Exec=$PWD/config/kiosk.sh
+Terminal=false
 EOF
 
-# 6. Make scripts executable
-chmod +x config/kiosk.sh
-chmod +x hardware/controller.py
-
-# 7. Reboot
+# 7. Let the dashboard reach the GPIO pins, then reboot
+sudo adduser "$(id -un)" gpio
 sudo reboot
 ```
 
@@ -347,17 +371,55 @@ sudo systemctl status dashboard-backend
 sudo journalctl -u dashboard-backend -n 50
 ```
 
+### The kiosk doesn't start on boot
+
+The backend and the kiosk browser are separate things. If
+`http://localhost:5000` works from a terminal but the screen is empty, the
+backend is fine and only the auto-start is at fault.
+
+```bash
+# 1. Does the kiosk script work when run by hand?
+~/family-dashboard/config/kiosk.sh
+
+# 2. Is the autostart entry present, and does it point at the right path?
+cat ~/.config/autostart/familydash-kiosk.desktop
+
+# 3. Which session are you running? This decides what honours that file.
+echo "$XDG_SESSION_TYPE"        # wayland or x11
+echo "$XDG_CURRENT_DESKTOP"
+```
+
+On Bookworm and later the session is Wayland, and XDG autostart is processed by
+the compositor's own config. If the entry is being ignored, add the script
+directly instead:
+
+```bash
+# labwc (Raspberry Pi OS 2024-11 and later)
+mkdir -p ~/.config/labwc
+echo "~/family-dashboard/config/kiosk.sh &" >> ~/.config/labwc/autostart
+
+# wayfire (earlier Bookworm images) - add under the [autostart] section
+# of ~/.config/wayfire.ini:
+#   familydash = /home/YOU/family-dashboard/config/kiosk.sh
+```
+
+Re-running `./install.sh` rewrites the XDG entry, so do that after moving the
+checkout rather than editing paths by hand.
+
 ### Hardware controls not working
 ```bash
 # Check hardware service
 sudo systemctl status dashboard-hardware
 
-# Check GPIO permissions
-groups pi | grep gpio
-# Should show: pi : pi adm dialout cdrom sudo audio video plugdev games users input render gpio
+# Check GPIO permissions (substitute your own username)
+groups "$(id -un)" | grep gpio
 
-# Test GPIO
-python3 -c "import RPi.GPIO as GPIO; GPIO.setmode(GPIO.BCM); print('GPIO OK')"
+# If `gpio` is missing, add yourself and reboot
+sudo adduser "$(id -un)" gpio
+
+# Test GPIO using the dashboard's own virtualenv
+~/family-dashboard/.venv/bin/python -c \
+    "import RPi.GPIO as GPIO; GPIO.setmode(GPIO.BCM); print('GPIO OK')"
 ```
 
 ### Motion sensor always triggering
@@ -475,19 +537,24 @@ card and stutter on a Pi 4. HEIC photos additionally need `pillow-heif`.
 ### Update Software
 ```bash
 cd ~/family-dashboard
-git pull
-pip3 install -r backend/requirements.txt --break-system-packages
-sudo systemctl restart dashboard-backend
-sudo systemctl restart dashboard-hardware
+./update.sh
 ```
+
+`update.sh` backs up the database and photos to your home directory, pulls,
+upgrades the virtualenv, runs the schema migration, re-renders the systemd
+units and restarts everything. Doing it by hand misses the migration step,
+which is what adds columns introduced since your Pi was installed.
 
 ### Backup Data
 ```bash
-# Backup database
-cp ~/family-dashboard/backend/dashboard.db ~/dashboard-backup-$(date +%Y%m%d).db
+cd ~/family-dashboard
+
+# Backup database and photos
+cp backend/dashboard.db ~/dashboard-backup-$(date +%Y%m%d).db
+tar -czf ~/dashboard-photos-$(date +%Y%m%d).tar.gz -C backend photos
 
 # Restore from backup
-cp ~/dashboard-backup-20240315.db ~/family-dashboard/backend/dashboard.db
+cp ~/dashboard-backup-20260315.db backend/dashboard.db
 sudo systemctl restart dashboard-backend
 ```
 
