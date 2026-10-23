@@ -501,8 +501,23 @@ _INGREDIENT_HEADING = re.compile(r'^\s*#*\s*ingredients?\b[\s:]*$', re.I)
 _INSTRUCTION_HEADING = re.compile(
     r'^\s*#*\s*(instructions?|directions?|method|steps?|preparation)\b[\s:]*$', re.I)
 _STEP_NUMBER_RE = re.compile(r'^\s*(?:step\s*)?\d+[.)]\s*', re.I)
+
+# Everything after one of these is not part of the recipe. Sites rarely write
+# the bare word: it is "Nutrition Facts", "Recipe Notes", "Chef's Notes". So a
+# qualifier in front is allowed, but the line still has to *end* on the
+# keyword - otherwise "Add nutrition yeast" would read as a heading and
+# silently drop the rest of the recipe.
 _NOISE_HEADING = re.compile(
-    r'^\s*#*\s*(notes?|nutrition|equipment|tips?|variations?)\b[\s:]*$', re.I)
+    r'^\s*#*\s*'
+    r"(?:[\w'’]+\s+){0,2}"
+    r'(?:notes?|nutrition|equipment|tips?|variations?|reviews?|comments?)'
+    r'(?:\s+(?:facts?|information|info))?'
+    r'\s*:?\s*$', re.I)
+
+
+def _is_noise_heading(line):
+    """A short heading line, not a sentence that happens to start with "Tip"."""
+    return bool(_NOISE_HEADING.match(line)) and len(line) <= 40
 
 
 def _looks_like_ingredient(line):
@@ -538,7 +553,12 @@ def parse_recipe_text(text, name='', url=''):
     if not lines:
         raise ImportFailed('Nothing to import - paste the recipe text first.')
 
-    ingredients, steps = [], []
+    import ingredients as ing
+
+    # Lines before the first heading are held back rather than classified.
+    # A paste copied off a recipe page starts with its title, and judged on
+    # its own a title reads exactly like a short unit-less ingredient.
+    preamble, ingredients, steps = [], [], []
     section = None
     for line in lines:
         if _INGREDIENT_HEADING.match(line):
@@ -547,30 +567,41 @@ def parse_recipe_text(text, name='', url=''):
         if _INSTRUCTION_HEADING.match(line):
             section = 'steps'
             continue
-        if _NOISE_HEADING.match(line):
+        if _is_noise_heading(line):
             section = 'skip'
             continue
 
-        if section == 'ingredients':
+        if section is None:
+            preamble.append(line)
+        elif section == 'ingredients':
             ingredients.append(line)
         elif section == 'steps':
             steps.append(_STEP_NUMBER_RE.sub('', line))
-        elif section == 'skip':
-            continue
-        elif _looks_like_ingredient(line):
-            ingredients.append(line)
+        # section == 'skip' falls through: notes and nutrition are dropped.
+
+    # The opening line is the title when it reads like one: short, no amount
+    # in it, and not a sentence. Only the opening line is eligible, so a
+    # heading-less paste that starts straight into ingredients and ends with
+    # "Mix everything in a bowl." does not promote that step to the title.
+    if not name and preamble:
+        first = preamble[0]
+        if (ing.parse_quantity(first)[0] is None
+                and len(first) <= 60
+                and not re.search(r'[.!?]$', first)):
+            name = preamble.pop(0)
+
+    # Whatever is left of the preamble is classified line by line. It goes in
+    # front of anything found under a heading, so the result stays in the
+    # order it was pasted.
+    pre_ingredients, pre_steps = [], []
+    for line in preamble:
+        if _looks_like_ingredient(line):
+            pre_ingredients.append(line)
         else:
-            steps.append(_STEP_NUMBER_RE.sub('', line))
+            pre_steps.append(_STEP_NUMBER_RE.sub('', line))
 
-    # With no headings, a leading title line gets judged as a short
-    # ingredient. If the caller gave no name, promote it instead - but only
-    # when it carries no amount, or a paste that opens with "2 cups flour"
-    # loses its first ingredient to the title.
-    if not name and ingredients and section is None:
-        import ingredients as ing
-
-        if ing.parse_quantity(ingredients[0])[0] is None:
-            name = ingredients.pop(0)
+    ingredients = pre_ingredients + ingredients
+    steps = pre_steps + steps
 
     if not ingredients:
         raise ImportFailed('No ingredients found in that text.')

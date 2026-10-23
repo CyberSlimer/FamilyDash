@@ -428,6 +428,45 @@ class PastedTextTests(unittest.TestCase):
         out = ri.parse_recipe_text('Ingredients\n¾ cup sugar\n')
         self.assertEqual(out['ingredients'], ['¾ cup sugar'])
 
+    def test_a_title_above_the_headings_becomes_the_name(self):
+        # Copying a recipe page gives you the title first, then the headings.
+        # Judged on its own a title reads like a short unit-less ingredient,
+        # so it used to land in the ingredient list.
+        out = ri.parse_recipe_text(
+            'Quick Beef Stir Fry\n'
+            'Ingredients\n1/4 cup soy sauce\n3/4 pound beef sirloin\n'
+            'Directions\nStep 1. Whisk the sauce.\n')
+        self.assertEqual(out['name'], 'Quick Beef Stir Fry')
+        self.assertEqual(out['ingredients'],
+                         ['1/4 cup soy sauce', '3/4 pound beef sirloin'])
+
+    def test_nutrition_facts_heading_is_dropped(self):
+        # The heading had to stand alone to match, so "Nutrition Facts" and
+        # "Chef's Notes" fell through and became extra steps.
+        out = ri.parse_recipe_text(
+            'Ingredients\n1 egg\nDirections\nFry it.\n'
+            'Nutrition Facts\n280 calories\n')
+        self.assertEqual(out['instructions'], '1. Fry it.')
+
+    def test_notes_with_trailing_words_is_dropped(self):
+        out = ri.parse_recipe_text(
+            "Ingredients\n1 egg\nMethod\nFry it.\nRecipe Notes\nFreezes well.\n")
+        self.assertEqual(out['instructions'], '1. Fry it.')
+
+    def test_a_sentence_starting_with_tips_is_still_a_step(self):
+        # "Tip" opens a noise heading but also plenty of real steps, so the
+        # length and punctuation guard has to keep this one.
+        out = ri.parse_recipe_text(
+            'Ingredients\n1 egg\nMethod\n'
+            'Tips for the pan: heat it until a drop of water skitters across.\n')
+        self.assertIn('skitters', out['instructions'])
+
+    def test_preamble_ingredients_keep_their_place(self):
+        out = ri.parse_recipe_text(
+            'Pancakes\n1 cup flour\nIngredients\n2 eggs\n')
+        self.assertEqual(out['name'], 'Pancakes')
+        self.assertEqual(out['ingredients'], ['1 cup flour', '2 eggs'])
+
     def test_a_leading_title_line_becomes_the_name(self):
         out = ri.parse_recipe_text('Quick Pancakes\n1 cup flour\n1 egg\n')
         self.assertEqual(out['name'], 'Quick Pancakes')
