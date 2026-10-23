@@ -14,7 +14,7 @@ This complete package contains everything you need to set up a fully-functional 
    - Smart grocery list generation
    - Pantry inventory tracking
    - Weather integration (National Weather Service)
-   - Apple Calendar integration (framework ready)
+   - Calendar integration (CalDAV and ICS/webcal sources)
 
 2. **Main Dashboard** (4 Rotating Screens)
    - Screen 1: Today's Calendar & Weather with alerts
@@ -50,27 +50,40 @@ family-dashboard/
 ├── config.env                     # User settings
 │
 ├── backend/
-│   ├── app.py                     # Flask API (960 lines)
-│   └── requirements.txt           # Dependencies
+│   ├── app.py                     # Flask API and the SQLite schema
+│   ├── calendar_sync.py           # CalDAV/ICS fetching, recurrence expansion
+│   ├── ingredients.py             # Ingredient parsing and unit maths
+│   ├── requirements.txt           # Dependencies
+│   └── tests/                     # pytest suite (API, sync, inventory, display)
 │
 ├── frontend/
-│   ├── index.html                 # Main dashboard (730 lines)
-│   └── mobile.html                # Mobile UI (850 lines)
+│   ├── index.html                 # Main dashboard - the 4 rotating screens
+│   ├── mobile.html                # Mobile UI, also bundled into the iOS app
+│   ├── manifest.webmanifest       # "Add to Home Screen" metadata
+│   └── icons/                     # Home-screen and app icons
 │
 ├── hardware/
-│   └── controller.py              # GPIO control (230 lines)
+│   └── controller.py              # GPIO button and PIR sensor control
+│
+├── app/                           # Native iOS shell (Capacitor) over mobile.html
+│   ├── ios/                       # Xcode project
+│   ├── scripts/                   # Build, icon and screenshot helpers
+│   └── README.md                  # Mac-side build and TestFlight steps
 │
 ├── config/
 │   ├── dashboard-backend.service.in   # systemd template (paths filled in at install)
 │   ├── dashboard-hardware.service.in
 │   ├── install-services.sh            # renders the templates for this machine
-│   ├── calendars.example.json
+│   ├── calendars.example.json         # calendar sources, copied to calendars.json
 │   └── kiosk.sh                       # full-screen browser, X11 and Wayland
 │
 └── docs/
     ├── QUICKSTART.md              # 30-min setup guide
     ├── WIRING.md                  # Hardware diagrams
-    └── STRUCTURE.md               # Project overview
+    ├── STRUCTURE.md               # Project overview
+    ├── APP_STORE_SUBMISSION.md    # iOS release checklist
+    ├── MAC_HANDOFF_PROMPT.md      # Handing the iOS build over to a Mac
+    └── PRIVACY.md                 # Privacy policy shipped with the app
 ```
 
 ## 🚀 Quick Start (30 Minutes)
@@ -259,20 +272,32 @@ has to live in `/home/pi`. Re-running it is safe and preserves your data.
 ### Troubleshooting
 - Restart services: `sudo systemctl restart dashboard-*`
 - Check logs: `sudo journalctl -u dashboard-backend -f`
-- Reset database: Delete dashboard.db, run install.sh
-- Hardware test: Scripts in docs/WIRING.md
+- Hardware test: scripts in [WIRING.md](WIRING.md)
+- Reset database (wipes every recipe, meal, grocery and pantry row):
+
+```bash
+# From the checkout, e.g. ~/family-dashboard
+sudo systemctl stop dashboard-backend
+rm backend/dashboard.db
+cd backend && ../.venv/bin/python -c "from app import init_db; init_db()" && cd ..
+sudo systemctl start dashboard-backend
+```
+
+  Re-running `./install.sh` also recreates a deleted database, but it reinstalls
+  packages and re-renders the systemd units too; the commands above are the
+  narrow version.
 
 ## 🎓 Learning Resources
 
 ### For Beginners
-1. Start with QUICKSTART.md
+1. Start with [QUICKSTART.md](QUICKSTART.md)
 2. Follow wiring diagrams carefully
 3. Test components individually
 4. Use mobile interface first
 5. Explore main dashboard
 
 ### For Advanced Users
-1. Review STRUCTURE.md
+1. Review [STRUCTURE.md](STRUCTURE.md)
 2. Examine API endpoints
 3. Customize appearance
 4. Add new features
@@ -281,10 +306,11 @@ has to live in `/home/pi`. Re-running it is safe and preserves your data.
 ## 🌍 Community & Support
 
 ### Documentation
-- README.md - Main reference
-- QUICKSTART.md - Setup guide
-- WIRING.md - Hardware guide
-- STRUCTURE.md - Technical details
+- [README.md](../README.md) - Main reference, including the API endpoints
+- [QUICKSTART.md](QUICKSTART.md) - Setup guide
+- [WIRING.md](WIRING.md) - Hardware guide
+- [STRUCTURE.md](STRUCTURE.md) - Technical details
+- [APP_STORE_SUBMISSION.md](APP_STORE_SUBMISSION.md) - iOS release process
 
 ### Troubleshooting
 - Check service status
@@ -351,7 +377,7 @@ While running, the system shows:
 
 ## 📞 Getting Help
 
-1. **Check Documentation**: README.md has answers to most questions
+1. **Check Documentation**: [README.md](../README.md) has answers to most questions
 2. **Review Logs**: `sudo journalctl -u dashboard-backend -f`
 3. **Test Components**: Individual test scripts in docs
 4. **Verify Setup**: Compare with wiring diagrams
@@ -387,10 +413,10 @@ This is a **complete, production-ready system** - not a prototype or demo. It in
 
 ---
 
-**Questions?** See README.md for complete documentation.
+**Questions?** See [README.md](../README.md) for complete documentation.
 
-**Ready to start?** See docs/QUICKSTART.md for setup instructions.
+**Ready to start?** See [QUICKSTART.md](QUICKSTART.md) for setup instructions.
 
-**Need help with wiring?** See docs/WIRING.md for detailed diagrams.
+**Need help with wiring?** See [WIRING.md](WIRING.md) for detailed diagrams.
 
 **Enjoy your Family Dashboard! 🏠📱🍽️**
