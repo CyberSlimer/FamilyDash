@@ -13,26 +13,55 @@ family-dashboard/
 ├── config.env                         # Configuration file
 │
 ├── backend/                           # Backend API
-│   ├── app.py                         # Main Flask application
+│   ├── app.py                         # Flask application, models, endpoints
+│   ├── calendar_sync.py               # CalDAV/ICS fetch and recurrence expansion
+│   ├── ingredients.py                 # Ingredient parsing and unit maths
 │   ├── requirements.txt               # Python dependencies
+│   ├── tests/                         # pytest suite
+│   │   ├── test_calendar_api.py
+│   │   ├── test_calendar_sync.py
+│   │   ├── test_display.py
+│   │   ├── test_display_command.py
+│   │   ├── test_ingredients.py
+│   │   ├── test_inventory.py
+│   │   └── fixtures/sample.ics
 │   └── dashboard.db                   # SQLite database (created on install)
 │
 ├── frontend/                          # Web interfaces
 │   ├── index.html                     # Main dashboard (4 screens)
-│   └── mobile.html                    # Mobile management interface
+│   ├── mobile.html                    # Mobile management interface
+│   ├── manifest.webmanifest           # "Add to Home Screen" metadata
+│   └── icons/                         # Home-screen and app icons
 │
 ├── hardware/                          # Hardware integration
 │   └── controller.py                  # Button & motion sensor control
 │
+├── app/                               # Native iOS shell (Capacitor)
+│   ├── README.md                      # Mac-side build and TestFlight steps
+│   ├── capacitor.config.json          # Capacitor configuration
+│   ├── package.json                   # npm scripts, incl. `npm run build`
+│   ├── ExportOptions.plist            # xcodebuild export settings
+│   ├── ios/                           # Generated Xcode project
+│   ├── resources/                     # Icon and splash source images
+│   ├── scripts/                       # build.js, make_icons.py, screenshots.sh
+│   └── screenshots/                   # App Store screenshots, per device
+│
 ├── config/                            # Configuration files
-│   ├── dashboard-backend.service      # Systemd service for API
-│   ├── dashboard-hardware.service     # Systemd service for hardware
+│   ├── dashboard-backend.service.in   # Systemd template for the API
+│   ├── dashboard-hardware.service.in  # Systemd template for the hardware
+│   ├── install-services.sh            # Fills the templates in for this machine
+│   ├── calendars.example.json         # Calendar sources, copied to calendars.json
 │   └── kiosk.sh                       # Kiosk mode auto-start script
 │
 └── docs/                              # Documentation
+    ├── GETTING_STARTED.md             # System overview
     ├── QUICKSTART.md                  # Quick start guide
     ├── WIRING.md                      # Hardware wiring guide
-    └── TROUBLESHOOTING.md             # (to be created)
+    ├── STRUCTURE.md                   # This file
+    ├── APP_STORE_SUBMISSION.md        # iOS release checklist
+    ├── MAC_HANDOFF_PROMPT.md          # Handing the iOS build over to a Mac
+    ├── PRIVACY.md                     # Privacy policy shipped with the app
+    └── legacy-calendar-sync.py        # Superseded standalone sync script
 ```
 
 ## 📄 File Descriptions
@@ -66,38 +95,61 @@ family-dashboard/
 
 ### Backend (backend/)
 
-**app.py** (960 lines)
+**app.py**
 - Flask web server
 - RESTful API endpoints
 - Database models (SQLAlchemy)
 - Recipe URL import
 - Weather integration
 - Grocery list generation
+- `init_db()`, which also adds columns introduced since an older install
 
 **Key Features:**
 - Recipe CRUD operations
-- Meal planning
+- Meal planning, including cook/uncook against the pantry
 - Grocery list management
 - Pantry inventory
+- Photo uploads for the kiosk slideshow
+- Display customisation (theme, screen order, screensaver)
 - Weather data (National Weather Service)
-- Calendar integration (placeholder)
+- Calendar integration (CalDAV and ICS/webcal)
+
+**calendar_sync.py**
+- Fetches CalDAV (iCloud, Nextcloud, Fastmail) and ICS/webcal sources
+- Expands recurring events
+- Normalizes everything to the local timezone
+- Caches results in memory so the dashboard never waits on a slow server
+- Reads `config/calendars.json`; `${VAR}` references resolve from the environment
+
+**ingredients.py**
+- Parses free-text ingredients ("1.5 lb chicken breast") into qty, unit and name
+- Canonical unit conversion and arithmetic
+- `normalize_name()` produces the `match_key` that links the three lists
+- Pure text/number work, no database access
 
 **requirements.txt**
-- Flask==3.0.0
-- Flask-CORS==4.0.0
-- Flask-SQLAlchemy==3.1.1
-- requests==2.31.0
-- beautifulsoup4==4.12.2
-- RPi.GPIO==0.7.1
-- lxml==4.9.3
+- Web layer: Flask, Flask-CORS, Flask-SQLAlchemy
+- Scraping: requests, beautifulsoup4, lxml
+- Calendar: icalendar, recurring-ical-events, caldav
+- Photos: Pillow, pillow-heif
+- Config: python-dotenv
+- Hardware: RPi.GPIO, installed only on ARM
+
+  See the file itself for the version ranges.
+
+**tests/**
+- pytest suite covering the calendar API and sync, the inventory loop,
+  ingredient parsing, the display settings and the kiosk command channel
+- Run with `cd backend && python -m pytest tests/ -q`
+- Uses `DASHBOARD_DB` to point at a scratch database, never the real one
 
 **dashboard.db** (auto-created)
 - SQLite database
-- Tables: recipes, meal_plan, grocery_item, pantry_item, settings
+- Tables: recipe, meal_plan, grocery_item, pantry_item, photo, settings
 
 ### Frontend (frontend/)
 
-**index.html** (730 lines)
+**index.html**
 - Main dashboard interface
 - 4 rotating screens
 - Optimized for 27" landscape
@@ -110,19 +162,27 @@ family-dashboard/
 - Responsive design
 - Real-time clock
 
-**mobile.html** (850 lines)
+**mobile.html**
 - Mobile-responsive interface
 - Tab-based navigation
 - Recipe management
 - Meal planning
 - Grocery list editing
 - Pantry tracking
+- Display tab: theme, screen order, screensaver, photos
 - Import recipes from URLs
 - Touch-optimized
+- The single copy of this UI: `app/` bundles it into the iOS app
+
+**manifest.webmanifest**
+- Lets the mobile interface be installed to a phone home screen
+
+**icons/**
+- `icon-192.png`, `icon-512.png`, `apple-touch-icon.png`
 
 ### Hardware (hardware/)
 
-**controller.py** (230 lines)
+**controller.py**
 - GPIO control for Raspberry Pi
 - Button handling (GPIO 17)
 - Motion sensor monitoring (GPIO 27)
@@ -136,17 +196,27 @@ family-dashboard/
 
 ### Config (config/)
 
-**dashboard-backend.service**
-- Systemd service unit
+**dashboard-backend.service.in**
+- Systemd service template
 - Auto-start backend API
 - Restart on failure
-- Runs as user 'pi'
+- `@@RUN_USER@@`, `@@APP_DIR@@` and `@@PYTHON@@` are filled in at install time,
+  so the service follows whatever account and checkout path you actually use
 
-**dashboard-hardware.service**
-- Systemd service unit
+**dashboard-hardware.service.in**
+- Systemd service template, same placeholders
 - Auto-start hardware controller
 - GPIO management
 - Runs after backend service
+
+**install-services.sh**
+- Renders both templates for this machine, installs them under
+  `/etc/systemd/system/`, then enables them
+- Called by `install.sh`; safe to re-run after moving the checkout
+
+**calendars.example.json**
+- Example calendar sources, copied to `config/calendars.json` on first install
+- `config/calendars.json` is git-ignored, so your URLs stay out of the repo
 
 **kiosk.sh**
 - Chromium browser launcher
@@ -154,10 +224,34 @@ family-dashboard/
 - Screen blanking disabled
 - Mouse cursor auto-hide
 - Full-screen mode
+- Waits for the desktop session, then for the network to stop changing,
+  before launching the browser
+- Watchdog: 45 seconds after launch it reads `kiosk_last_seen_seconds` from
+  `/api/health`. The page polls every second, so a recent value proves a
+  browser is up and running its JavaScript - stronger evidence than the
+  process merely existing, which it does even when the screen is blank.
+  If nothing has polled, it kills the browser and retries, up to three times.
+- Logs to `$XDG_RUNTIME_DIR/familydash-kiosk.log`, falling back to `/tmp`
+
+### iOS App (app/)
+
+**A Capacitor shell around `frontend/mobile.html`.** There is one copy of the
+UI; `npm run build` bundles it into the app, so a change to the web version
+ships in the app too. The app asks for the Pi's address on first launch and
+verifies it against `/api/health`. Typing `demo` runs it on built-in sample
+data with no server, which is what App Store screenshots and App Review use.
+
+**scripts/**
+- `build.js` - copies the frontend in and syncs Capacitor
+- `make_icons.py` - generates the icon set from `resources/`
+- `screenshots.sh` - drives the simulator for App Store screenshots
+
+Building needs a Mac with Xcode. See [`app/README.md`](../app/README.md) and
+[`APP_STORE_SUBMISSION.md`](APP_STORE_SUBMISSION.md).
 
 ### Docs (docs/)
 
-**QUICKSTART.md** (480 lines)
+**QUICKSTART.md**
 - 30-minute setup guide
 - Step-by-step instructions
 - Hardware checklist
@@ -165,13 +259,30 @@ family-dashboard/
 - First-time configuration
 - Troubleshooting basics
 
-**WIRING.md** (520 lines)
+**WIRING.md**
 - Complete wiring guide
 - GPIO pin reference
 - Component diagrams
 - Testing scripts
 - Safety guidelines
 - Mounting tips
+
+**GETTING_STARTED.md**
+- What the system includes and what it runs on
+- The 30-minute path from clone to working dashboard
+
+**APP_STORE_SUBMISSION.md**
+- iOS release checklist: signing, screenshots, review notes
+
+**MAC_HANDOFF_PROMPT.md**
+- Brief for picking the iOS build up on a Mac
+
+**PRIVACY.md**
+- Privacy policy, served with the app and linked from App Store Connect
+
+**legacy-calendar-sync.py**
+- The standalone sync script that `backend/calendar_sync.py` replaced; kept
+  for reference, not used by the running system
 
 ## 🔧 System Services
 
@@ -195,11 +306,14 @@ Privileges: GPIO access required
 
 ### Kiosk Mode (autostart)
 ```
-Launcher: ~/.config/lxsession/LXDE-pi/autostart
-Browser: Chromium
-Mode: Full-screen kiosk
+Launcher: ~/.config/autostart/familydash-kiosk.desktop
+Browser: Chromium (chromium-browser, or chromium on newer releases)
+Mode: Full-screen kiosk, X11 and Wayland
 URL: http://localhost:5000
 ```
+An XDG autostart entry, not the old `~/.config/lxsession/LXDE-pi/autostart`:
+Bookworm replaced LXSession with Wayland, where that file is never read. XDG
+autostart runs under all three session types.
 
 ## 📊 Database Schema
 
@@ -222,11 +336,16 @@ URL: http://localhost:5000
 - recipe_id (FOREIGN KEY)
 - custom_meal
 - notes
+- servings (overrides the recipe's own yield)
+- cooked_at (set when the meal deducted from the pantry)
 - created_at
 
 ### grocery_item
 - id (PRIMARY KEY)
-- name, quantity
+- name
+- quantity (display text, e.g. "1 1/2 cup")
+- qty, unit (parsed amount and canonical unit; qty NULL = unquantified)
+- match_key (INDEXED - normalized name, links the three lists)
 - category
 - checked (BOOLEAN)
 - recipe_id (FOREIGN KEY)
@@ -235,12 +354,23 @@ URL: http://localhost:5000
 
 ### pantry_item
 - id (PRIMARY KEY)
-- name, quantity
+- name
+- quantity (display text, e.g. "2 lb")
+- qty, unit (parsed amount and canonical unit)
+- match_key (INDEXED - links to recipes and the grocery list)
 - category
 - expiration_date
 - location (pantry/fridge/freezer)
 - notes
 - created_at, updated_at
+
+### photo
+- id (PRIMARY KEY)
+- filename (stored name under photos/)
+- original_name, caption
+- width, height, bytes
+- sort_order
+- created_at
 
 ### settings
 - id (PRIMARY KEY)
@@ -361,23 +491,30 @@ counter is display-server agnostic and does not need the browser focused.
 ## 📦 Dependencies
 
 ### System Packages
-- python3 (3.9+)
-- python3-pip
-- python3-dev
-- python3-rpi.gpio
+- python3 (3.9+), python3-pip, python3-dev, python3-venv
+- curl, git
 - chromium-browser (`chromium` on Bookworm and later)
+
+Installed when available, but not required:
+- python3-rpi.gpio (only on a Pi; pip provides it otherwise)
 - unclutter (X11 only; hides the idle cursor)
 - wlr-randr / wlopm (Wayland; switch the monitor off, which vcgencmd no
   longer does under the KMS driver)
 
 ### Python Packages
+Installed with pip into a virtualenv at `.venv/` inside the checkout, because
+Debian forbids writing to the system Python (PEP 668). The venv is created
+with `--system-site-packages` so apt's `python3-rpi.gpio` stays visible.
+
 - Flask (web framework)
 - Flask-CORS (cross-origin support)
 - Flask-SQLAlchemy (database ORM)
 - requests (HTTP client)
-- beautifulsoup4 (HTML parsing)
-- RPi.GPIO (GPIO control)
-- lxml (XML/HTML parser)
+- beautifulsoup4, lxml (recipe HTML parsing)
+- icalendar, recurring-ical-events, caldav (calendar sync)
+- Pillow, pillow-heif (photo uploads, HEIC support)
+- python-dotenv (reads config.env)
+- RPi.GPIO (GPIO control, ARM only)
 
 ## 🔐 Security Considerations
 
@@ -420,13 +557,17 @@ counter is display-server agnostic and does not need the browser focused.
 ## 📝 Configuration Files
 
 ### System
-- `/etc/systemd/system/dashboard-*.service`
-- `~/.config/lxsession/LXDE-pi/autostart`
-- `/etc/lightdm/lightdm.conf`
+- `/etc/systemd/system/dashboard-*.service` (rendered from `config/*.service.in`)
+- `~/.config/autostart/familydash-kiosk.desktop`
+- `/etc/lightdm/lightdm.conf` (only on releases that still use LightDM)
 
 ### Application
-- `~/family-dashboard/config.env`
-- `~/family-dashboard/backend/dashboard.db`
+Inside the checkout, wherever you put it - the installer discovers the path:
+- `config.env`
+- `config/calendars.json`
+- `backend/dashboard.db`
+- `backend/photos/`
+- `.venv/`
 
 ## 🎯 Customization Points
 
