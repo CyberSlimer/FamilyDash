@@ -62,6 +62,36 @@ fi
 # still bringing up the panel and desktop behind us.
 sleep 5
 
+# Then wait for the network to stop changing shape. Chromium's network
+# service does not survive interfaces appearing or disappearing while it
+# starts: it dies with "Network service crashed or was terminated", the page
+# can no longer fetch anything, and the wall sits blank. On a Pi running
+# Docker this is almost guaranteed, because the daemon brings up docker0, a
+# bridge and a veth pair several seconds into the boot - about when the kiosk
+# would otherwise launch. Anything else that reshapes the network at startup,
+# such as a VPN, would do the same.
+wait_for_stable_network() {
+    local prev='' cur='' stable=0 i
+    for i in $(seq 1 90); do
+        cur=$(ip -o link show 2>/dev/null | awk -F': ' '{print $2}' | sort | tr '\n' ',')
+        if [ -n "$cur" ] && [ "$cur" = "$prev" ]; then
+            stable=$((stable + 1))
+            [ "$stable" -ge 5 ] && return 0
+        else
+            stable=0
+        fi
+        prev="$cur"
+        sleep 1
+    done
+    return 1
+}
+
+if wait_for_stable_network; then
+    echo "network settled: $(ip -o link show 2>/dev/null | awk -F': ' '{print $2}' | tr '\n' ' ')"
+else
+    echo "network still changing after 90s - launching anyway"
+fi
+
 # Wait for the backend to answer rather than sleeping a fixed 10 seconds.
 # /api/health is the same endpoint the phone app uses to verify a server, so
 # it's the real readiness signal - and on a cold boot the Pi often needs far
