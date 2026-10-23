@@ -519,7 +519,12 @@ card and stutter on a Pi 4. HEIC photos additionally need `pillow-heif`.
 - `POST /api/photos/reorder` - `{"ids": [3, 1, 2]}` sets slideshow order
 
 ### Weather & System
-- `GET /api/weather` - Weather + NWS alerts for the configured location
+- `GET /api/weather` - Current conditions, a 7-day outlook, sunrise/sunset and NWS alerts
+  for the configured location. Served from a 10-minute cache; add `?refresh=1` to force a
+  re-fetch. `current` comes from the nearest observation station (so it carries a real
+  `feelsLike`), `daily` folds the 12-hour NWS periods into a high and a low per day, and
+  `sun` is computed locally rather than fetched. If a refresh fails after at least one
+  success the last good payload is returned with `stale: true` rather than an error.
 - `GET /api/health` - Server identity for the app's server-setup screen
 
 ### Calendar

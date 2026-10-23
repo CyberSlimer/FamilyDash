@@ -20,6 +20,7 @@ from urllib.parse import urlparse
 from calendar_sync import (CalendarSync, DEFAULT_COLORS, read_raw_config,
                            write_raw_config, test_calendar)
 import ingredients as ing
+import weather as wx
 
 # Paths
 basedir = os.path.abspath(os.path.dirname(__file__))
@@ -60,6 +61,10 @@ db = SQLAlchemy(app)
 
 # Calendar sync service (background thread started in main / init_db)
 _calendars_file = os.environ.get('CALENDARS_FILE') or os.path.join(config_dir, 'calendars.json')
+# Weather is cached rather than fetched per request: the kiosk rotates
+# through its screens all day, and NWS updates hourly at most.
+weather_cache = wx.WeatherCache()
+
 calendar_sync = CalendarSync(
     config_path=os.path.join(project_root, _calendars_file),  # no-op if already absolute
     refresh_interval=int(os.environ.get('CALENDAR_REFRESH_INTERVAL', 300)),
@@ -1292,56 +1297,22 @@ def calendar_test():
 
 @app.route('/api/weather', methods=['GET'])
 def weather():
-    """Get weather for the configured location (LOCATION_LAT/LON in config.env)"""
-    # Using National Weather Service API (free, no key required)
+    """Weather for the configured location (LOCATION_LAT/LON in config.env).
+
+    Served from a 10-minute cache. Pass ?refresh=1 to force a re-fetch; the
+    Display tab uses that after a location change.
+    """
+    force = request.args.get('refresh') in ('1', 'true', 'yes')
     try:
-        lat, lon = LOCATION_LAT, LOCATION_LON
-        
-        # Get grid point
-        point_url = f'https://api.weather.gov/points/{lat},{lon}'
-        point_response = requests.get(point_url, timeout=10)
-        point_data = point_response.json()
-        
-        # Get forecast
-        forecast_url = point_data['properties']['forecast']
-        forecast_response = requests.get(forecast_url, timeout=10)
-        forecast_data = forecast_response.json()
-        
-        # Get alerts
-        alerts_url = f'https://api.weather.gov/alerts/active?point={lat},{lon}'
-        alerts_response = requests.get(alerts_url, timeout=10)
-        alerts_data = alerts_response.json()
-        
-        periods = forecast_data['properties']['periods'][:5]  # Next 5 periods
-        
-        return jsonify({
-            'location': LOCATION_NAME,
-            'current': {
-                'temperature': periods[0]['temperature'],
-                'temperatureUnit': periods[0]['temperatureUnit'],
-                'shortForecast': periods[0]['shortForecast'],
-                'detailedForecast': periods[0]['detailedForecast'],
-                'windSpeed': periods[0]['windSpeed'],
-                'windDirection': periods[0]['windDirection'],
-            },
-            'forecast': [{
-                'name': p['name'],
-                'temperature': p['temperature'],
-                'temperatureUnit': p['temperatureUnit'],
-                'shortForecast': p['shortForecast'],
-                'windSpeed': p['windSpeed'],
-            } for p in periods[1:]],
-            'alerts': [{
-                'event': alert['properties']['event'],
-                'headline': alert['properties']['headline'],
-                'description': alert['properties']['description'],
-                'severity': alert['properties']['severity'],
-                'urgency': alert['properties']['urgency'],
-            } for alert in alerts_data.get('features', [])]
-        })
-        
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        payload = weather_cache.get(LOCATION_LAT, LOCATION_LON, LOCATION_NAME,
+                                    calendar_sync.tz, force=force)
+        return jsonify(payload)
+    except wx.WeatherError as e:
+        # Only reached when there has never been a good fetch; after one
+        # success the cache serves the last payload with stale=True instead.
+        logger.warning('Weather unavailable: %s', e)
+        return jsonify({'error': str(e)}), 503
+
 
 # ============================================================================
 # DISPLAY & PHOTO ENDPOINTS

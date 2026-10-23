@@ -288,34 +288,85 @@
             line-height: 1.6;
         }
 
+        .feels-like {
+            font-size: 1.3em;
+            opacity: 0.75;
+            margin-top: 4px;
+        }
+
+        .sun-times {
+            opacity: 0.8;
+            white-space: nowrap;
+        }
+
         .forecast {
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 15px;
+            /* Overridden inline with the real day count; this is the fallback
+               for a forecast that never rendered. Note minmax(0, 1fr) rather
+               than plain 1fr: 1fr floors at min-content, so a long
+               description would push the row wider than the card. */
+            grid-template-columns: repeat(7, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        /* A phone or a portrait panel can't show seven columns legibly, so
+           let them wrap there. The inline style above is more specific, so
+           this has to override it explicitly. */
+        @media (max-width: 900px) {
+            .forecast[style] {
+                grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)) !important;
+            }
         }
 
         .forecast-item {
             background: var(--fd-card);
-            padding: 15px;
+            padding: 15px 10px;
             border-radius: 10px;
             text-align: center;
+            min-width: 0;   /* let long descriptions wrap instead of stretching the column */
+        }
+
+        .forecast-item.is-today {
+            background: var(--fd-card);
+            box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.35);
         }
 
         .forecast-day {
-            font-size: 1.2em;
-            margin-bottom: 10px;
+            font-size: 1.15em;
+            margin-bottom: 8px;
             font-weight: 600;
         }
 
         .forecast-temp {
             font-size: 2em;
             font-weight: 300;
+            line-height: 1.1;
+        }
+
+        .forecast-low {
+            font-size: 1.3em;
+            font-weight: 300;
+            opacity: 0.6;
         }
 
         .forecast-desc {
-            font-size: 1em;
+            font-size: 0.95em;
             opacity: 0.9;
-            margin-top: 5px;
+            margin-top: 6px;
+            overflow-wrap: anywhere;
+        }
+
+        .forecast-precip {
+            font-size: 0.9em;
+            opacity: 0.75;
+            margin-top: 4px;
+        }
+
+        .weather-stale {
+            margin-top: 18px;
+            font-size: 1em;
+            opacity: 0.7;
+            font-style: italic;
         }
 
         .alert {
@@ -1069,6 +1120,32 @@
             return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
         }
 
+        function clockTime(iso) {
+            if (!iso) return '';
+            const d = new Date(iso);
+            return isNaN(d) ? '' : d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        }
+
+        function sunLine(sun) {
+            if (!sun) return '';
+            const up = clockTime(sun.sunrise), down = clockTime(sun.sunset);
+            if (!up && !down) return '';   // polar day or night
+            return `<div class="sun-times">🌅 ${up} &nbsp; 🌇 ${down}</div>`;
+        }
+
+        // NWS labels the first days "Today"/"Tonight" and then uses weekday
+        // names, which run out past a week. Past the named ones, derive the
+        // weekday from the date instead.
+        function dayLabel(day, index) {
+            if (index === 0) return 'Today';
+            if (index === 1) return 'Tomorrow';
+            if (day.date) {
+                const d = new Date(day.date + 'T00:00:00');
+                if (!isNaN(d)) return d.toLocaleDateString([], { weekday: 'short' });
+            }
+            return day.name || '';
+        }
+
         function fmtTime(d) {
             return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
         }
@@ -1197,32 +1274,61 @@
                     `).join('');
                 }
                 
-                // Current weather
+                // Current conditions. `feelsLike` comes from a real station
+                // observation, so only show it when it actually differs -
+                // repeating the same number twice just adds noise.
+                const cur = data.current || {};
+                const feels = (cur.feelsLike != null && Math.round(cur.feelsLike) !== Math.round(cur.temperature))
+                    ? `<div class="feels-like">Feels like ${Math.round(cur.feelsLike)}°</div>`
+                    : '';
+                const humidity = cur.humidity != null
+                    ? `<div>💧 ${Math.round(cur.humidity)}%</div>` : '';
+                const wind = cur.windSpeed
+                    ? `<div>💨 ${esc(cur.windSpeed)}${cur.windDirection ? ' ' + esc(cur.windDirection) : ''}</div>`
+                    : '';
+
                 html += `
                     <div class="weather-current">
-                        <div class="temp-large">${data.current.temperature}°${data.current.temperatureUnit}</div>
+                        <div>
+                            <div class="temp-large">${Math.round(cur.temperature)}°${esc(cur.temperatureUnit || 'F')}</div>
+                            ${feels}
+                        </div>
                         <div class="weather-details">
-                            <div>${data.current.shortForecast}</div>
-                            <div>💨 ${data.current.windSpeed} ${data.current.windDirection}</div>
+                            <div>${esc(cur.shortForecast || '')}</div>
+                            ${wind}
+                            ${humidity}
+                            ${sunLine(data.sun)}
                         </div>
                     </div>
                 `;
-                
-                // Forecast
-                if (data.forecast && data.forecast.length > 0) {
+
+                // Seven-day outlook. NWS speaks in 12-hour periods; the
+                // backend folds them into a high and a low per day.
+                const daily = data.daily || [];
+                if (daily.length) {
+                    // The day count drives the column count, so the row is
+                    // always exactly one row wide however many days NWS
+                    // returned - guessing a pixel minimum instead wraps the
+                    // last day onto its own line in a half-width card.
                     html += `
-                        <div class="forecast">
-                            ${data.forecast.map(period => `
-                                <div class="forecast-item">
-                                    <div class="forecast-day">${period.name}</div>
-                                    <div class="forecast-temp">${period.temperature}°</div>
-                                    <div class="forecast-desc">${period.shortForecast}</div>
+                        <div class="forecast" style="grid-template-columns: repeat(${daily.length}, minmax(0, 1fr))">
+                            ${daily.map((day, i) => `
+                                <div class="forecast-item${i === 0 ? ' is-today' : ''}">
+                                    <div class="forecast-day">${esc(dayLabel(day, i))}</div>
+                                    <div class="forecast-temp">${day.high != null ? Math.round(day.high) + '°' : '–'}</div>
+                                    <div class="forecast-low">${day.low != null ? Math.round(day.low) + '°' : ''}</div>
+                                    <div class="forecast-desc">${esc(day.shortForecast || '')}</div>
+                                    ${day.precipitation ? `<div class="forecast-precip">💧 ${day.precipitation}%</div>` : ''}
                                 </div>
                             `).join('')}
                         </div>
                     `;
                 }
-                
+
+                if (data.stale) {
+                    html += '<div class="weather-stale">Showing the last forecast — the weather service is unreachable</div>';
+                }
+
                 container.innerHTML = html;
             } catch (error) {
                 console.error('Error fetching weather:', error);
