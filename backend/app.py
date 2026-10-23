@@ -10,8 +10,6 @@ from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
 import logging
 import os
-import requests
-from bs4 import BeautifulSoup
 import json
 import re
 import threading
@@ -23,6 +21,7 @@ from calendar_sync import (CalendarSync, DEFAULT_COLORS, read_raw_config,
                            write_raw_config, test_calendar)
 import ingredients as ing
 import weather as wx
+import recipe_import as rimport
 
 # Paths
 basedir = os.path.abspath(os.path.dirname(__file__))
@@ -540,109 +539,57 @@ def recipe_detail(recipe_id):
 
 @app.route('/api/recipes/import-url', methods=['POST'])
 def import_recipe_url():
-    """Import recipe from URL using web scraping"""
-    data = request.json
-    url = data.get('url')
-    
+    """
+    Read a recipe off a web page.
+
+    Returns the same shape POST /api/recipes accepts, so the app can show it
+    for review and save it unchanged. A site that refuses automated requests
+    comes back as 422 with `can_paste`, which tells the app to offer the
+    paste box rather than just reporting a failure.
+    """
+    data = request.json or {}
+    url = (data.get('url') or '').strip()
+
     if not url:
         return jsonify({'error': 'URL required'}), 400
-    
+    if not url.startswith(('http://', 'https://')):
+        url = 'https://' + url
+
     try:
-        # Fetch the page
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-        response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status()
-        
-        soup = BeautifulSoup(response.content, 'html.parser')
-        
-        # Try to extract recipe data
-        recipe_data = {
-            'name': '',
-            'description': '',
-            'source_url': url,
-            'ingredients': [],
-            'instructions': '',
-            'prep_time': None,
-            'cook_time': None,
-            'servings': None,
-            'image_url': ''
-        }
-        
-        # Extract title
-        title_elem = soup.find('h1') or soup.find('title')
-        if title_elem:
-            recipe_data['name'] = title_elem.get_text().strip()
-        
-        # Extract meta description
-        meta_desc = soup.find('meta', {'name': 'description'})
-        if meta_desc:
-            recipe_data['description'] = meta_desc.get('content', '').strip()
-        
-        # Extract image
-        og_image = soup.find('meta', {'property': 'og:image'})
-        if og_image:
-            recipe_data['image_url'] = og_image.get('content', '')
-        
-        # Try to find ingredients (common patterns)
-        ingredient_patterns = [
-            soup.find_all('li', class_=re.compile('ingredient', re.I)),
-            soup.find_all('li', {'itemprop': 'recipeIngredient'}),
-            soup.find_all('span', {'itemprop': 'recipeIngredient'})
-        ]
-        
-        for pattern in ingredient_patterns:
-            if pattern:
-                recipe_data['ingredients'] = [ing.get_text().strip() for ing in pattern]
-                break
-        
-        # Try to find instructions
-        instruction_patterns = [
-            soup.find_all('li', class_=re.compile('instruction', re.I)),
-            soup.find_all('li', {'itemprop': 'recipeInstructions'}),
-            soup.find('div', {'itemprop': 'recipeInstructions'})
-        ]
-        
-        for pattern in instruction_patterns:
-            if pattern:
-                if isinstance(pattern, list):
-                    recipe_data['instructions'] = '\n\n'.join([
-                        f"{i+1}. {inst.get_text().strip()}" 
-                        for i, inst in enumerate(pattern)
-                    ])
-                else:
-                    recipe_data['instructions'] = pattern.get_text().strip()
-                break
-        
-        # Try to extract times
-        prep_time = soup.find('time', {'itemprop': 'prepTime'})
-        if prep_time:
-            # Parse ISO duration format (PT15M)
-            duration = prep_time.get('datetime', '')
-            minutes = re.search(r'PT(\d+)M', duration)
-            if minutes:
-                recipe_data['prep_time'] = int(minutes.group(1))
-        
-        cook_time = soup.find('time', {'itemprop': 'cookTime'})
-        if cook_time:
-            duration = cook_time.get('datetime', '')
-            minutes = re.search(r'PT(\d+)M', duration)
-            if minutes:
-                recipe_data['cook_time'] = int(minutes.group(1))
-        
-        # Extract servings
-        servings = soup.find('span', {'itemprop': 'recipeYield'})
-        if servings:
-            yield_text = servings.get_text().strip()
-            numbers = re.search(r'\d+', yield_text)
-            if numbers:
-                recipe_data['servings'] = int(numbers.group(0))
-        
-        return jsonify(recipe_data)
-        
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify(rimport.import_from_url(url))
+    except rimport.ImportBlocked as exc:
+        return jsonify({'error': str(exc), 'can_paste': True, 'url': url}), 422
+    except rimport.ImportFailed as exc:
+        return jsonify({'error': str(exc), 'can_paste': True, 'url': url}), 422
+    except Exception as exc:
+        log.exception('Recipe import failed for %s', url)
+        return jsonify({'error': f'Import failed: {exc}'}), 500
+
+
+@app.route('/api/recipes/import-text', methods=['POST'])
+def import_recipe_text():
+    """
+    Read a recipe out of pasted text.
+
+    The way in for the sites behind bot protection, which no server-side
+    fetch can get past. Accepts either the whole page's text or just the
+    ingredient list.
+    """
+    data = request.json or {}
+    text = data.get('text') or ''
+
+    try:
+        return jsonify(rimport.parse_recipe_text(
+            text,
+            name=(data.get('name') or '').strip(),
+            url=(data.get('source_url') or '').strip(),
+        ))
+    except rimport.ImportFailed as exc:
+        return jsonify({'error': str(exc)}), 422
+    except Exception as exc:
+        log.exception('Recipe text import failed')
+        return jsonify({'error': f'Import failed: {exc}'}), 500
+
 
 # ============================================================================
 # MEAL PLAN ENDPOINTS
@@ -1312,7 +1259,7 @@ def weather():
     except wx.WeatherError as e:
         # Only reached when there has never been a good fetch; after one
         # success the cache serves the last payload with stale=True instead.
-        logger.warning('Weather unavailable: %s', e)
+        log.warning('Weather unavailable: %s', e)
         return jsonify({'error': str(e)}), 503
 
 
