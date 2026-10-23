@@ -141,7 +141,8 @@ cd ~/family-dashboard
 sudo apt-get update
 sudo apt-get install -y python3 python3-pip python3-dev python3-venv curl git \
     chromium-browser python3-rpi.gpio
-sudo apt-get install -y unclutter xdotool   # X11 sessions only; skip on Wayland
+sudo apt-get install -y unclutter           # hides the idle cursor, X11 only
+sudo apt-get install -y wlr-randr wlopm     # switch the monitor off on Wayland
 
 # 2. Create the virtualenv and install Python dependencies
 python3 -m venv --system-site-packages .venv
@@ -421,6 +422,28 @@ sudo adduser "$(id -un)" gpio
 ~/family-dashboard/.venv/bin/python -c \
     "import RPi.GPIO as GPIO; GPIO.setmode(GPIO.BCM); print('GPIO OK')"
 ```
+
+The button does not drive the browser directly. It posts a command to the
+backend, and the kiosk polls for it once a second — necessary because Wayland
+forbids one program from sending keystrokes to another program's window, which
+is how this used to work. So there are two halves to test separately:
+
+```bash
+# 1. Does the command reach the backend? Watch this while pressing the button:
+sudo journalctl -u dashboard-hardware -f
+
+# 2. Does the kiosk act on a command? This should advance the wall display
+#    about a second later, with no button involved:
+curl -X POST -H 'Content-Type: application/json' \
+     -d '{"action":"next"}' http://localhost:5000/api/display/command
+```
+
+If (2) works but (1) logs nothing, the problem is the wiring or the GPIO
+group. If (1) logs "Sent command" but the screen does not move, the kiosk
+browser is not running or is pointed somewhere else.
+
+Valid actions are `next`, `prev`, `refresh`, `wake`, and `screen` with an
+`index`.
 
 ### Motion sensor always triggering
 - Adjust sensitivity pot on PIR sensor

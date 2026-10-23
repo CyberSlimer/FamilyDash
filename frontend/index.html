@@ -1543,6 +1543,47 @@
         // =============================================
 
         const CONFIG_POLL_MS = 15000;     // how soon an edit in the app lands here
+        const COMMAND_POLL_MS = 1000;     // a button press has to feel immediate
+
+        // The hardware button and motion sensor reach the wall through here.
+        // They used to arrive as synthetic keystrokes from xdotool, which
+        // Wayland does not permit between clients, so the kiosk now asks the
+        // backend what it has been told to do.
+        let lastCommandSeq = null;
+
+        function applyCommand(cmd) {
+            noteInteraction();
+            if (saverVisible) hideScreensaver();
+            switch (cmd.action) {
+                case 'next':    nextScreen(); break;
+                case 'prev':    showIndex(currentIndex - 1); break;
+                case 'refresh': refreshCurrentScreen(); break;
+                case 'screen':
+                    if (Number.isInteger(cmd.index)) showIndex(cmd.index);
+                    break;
+                case 'wake':    break;  // noteInteraction above is the whole job
+            }
+        }
+
+        async function pollCommand() {
+            try {
+                const res = await fetch(`${API_BASE}/display/command`, { cache: 'no-store' });
+                if (!res.ok) return;
+                const cmd = await res.json();
+
+                // First poll only records where the counter stands. Without
+                // this a reload would replay whatever command came last.
+                if (lastCommandSeq === null) { lastCommandSeq = cmd.seq; return; }
+                // The counter lives in memory, so a backend restart sends it
+                // backwards. Resync rather than treating that as a command.
+                if (cmd.seq <= lastCommandSeq) { lastCommandSeq = cmd.seq; return; }
+
+                lastCommandSeq = cmd.seq;
+                if (cmd.action) applyCommand(cmd);
+            } catch (err) {
+                // Backend restarting or briefly unreachable; the next tick retries.
+            }
+        }
         const DATA_REFRESH_MS = 300000;
 
         async function pollConfig() {
@@ -1575,6 +1616,7 @@
 
             startRotation();
             setInterval(pollConfig, CONFIG_POLL_MS);
+            setInterval(pollCommand, COMMAND_POLL_MS);
             setInterval(checkIdle, 5000);
         }
 

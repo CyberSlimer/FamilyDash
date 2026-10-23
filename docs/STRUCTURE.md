@@ -127,7 +127,7 @@ family-dashboard/
 - Button handling (GPIO 17)
 - Motion sensor monitoring (GPIO 27)
 - Display power management
-- Keyboard simulation (xdotool)
+- Screen commands posted to the backend (no synthetic keystrokes)
 - Features:
   - Button press detection
   - Motion-based wake/sleep
@@ -345,9 +345,17 @@ Controller ──GET /api/display every 30s──> screensaver on? leave monitor
 ## 🔌 Hardware Signal Flow
 
 ```
-Button Press → GPIO 17 → controller.py → xdotool → Browser → Next Screen
-Motion Sensor → GPIO 27 → controller.py → vcgencmd → Display On/Off
-                                       └──> xdotool → Browser → wake from screensaver
+Button Press  → GPIO 17 → controller.py → POST /api/display/command
+                                              └→ kiosk polls (1s) → Next Screen
+
+Motion Sensor → GPIO 27 → controller.py → wlopm / wlr-randr / vcgencmd → Display On/Off
+                                       └→ POST /api/display/command
+                                              └→ kiosk polls (1s) → wake from screensaver
+
+The controller never touches the browser directly. Wayland, which Raspberry
+Pi OS has used since Bookworm, forbids one client from injecting input into
+another, so the old xdotool path could not work there. Polling a command
+counter is display-server agnostic and does not need the browser focused.
 ```
 
 ## 📦 Dependencies
@@ -357,9 +365,10 @@ Motion Sensor → GPIO 27 → controller.py → vcgencmd → Display On/Off
 - python3-pip
 - python3-dev
 - python3-rpi.gpio
-- chromium-browser
-- unclutter
-- xdotool
+- chromium-browser (`chromium` on Bookworm and later)
+- unclutter (X11 only; hides the idle cursor)
+- wlr-randr / wlopm (Wayland; switch the monitor off, which vcgencmd no
+  longer does under the KMS driver)
 
 ### Python Packages
 - Flask (web framework)

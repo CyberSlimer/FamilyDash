@@ -170,7 +170,7 @@ has to live in `/home/pi`. Re-running it is safe and preserves your data.
 
 - **Backend**: Python 3, Flask, SQLAlchemy, SQLite
 - **Frontend**: HTML5, CSS3, Vanilla JavaScript
-- **Hardware**: RPi.GPIO, xdotool
+- **Hardware**: RPi.GPIO (screen changes go through the backend, not synthetic keystrokes)
 - **System**: Systemd, Chromium, Linux
 
 ## 🎯 Use Cases

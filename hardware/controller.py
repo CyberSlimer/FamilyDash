@@ -5,22 +5,31 @@ Handles: Physical button, PIR motion sensor, keyboard input
 """
 
 import RPi.GPIO as GPIO
+import shutil
 import time
 import requests
 from datetime import datetime, timedelta
 import subprocess
 import os
 
+from dotenv import load_dotenv
+
 # ============================================================================
 # CONFIGURATION
 # ============================================================================
 
+# config.env advertises these as settings, so actually read them. Under
+# systemd this process starts with no session environment at all, so the file
+# has to be loaded explicitly rather than inherited from a login shell.
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+load_dotenv(os.path.join(PROJECT_ROOT, 'config.env'))
+
 # GPIO Pin Configuration
-BUTTON_PIN = 17  # Physical button to advance screens
-MOTION_PIN = 27  # PIR motion sensor
+BUTTON_PIN = int(os.environ.get("BUTTON_PIN", 17))  # Physical button to advance screens
+MOTION_PIN = int(os.environ.get("MOTION_PIN", 27))  # PIR motion sensor
 
 # Dashboard URL
-DASHBOARD_URL = "http://localhost:5000"
+DASHBOARD_URL = "http://localhost:{}".format(os.environ.get("API_PORT", "5000"))
 
 # Motion sensor settings
 MOTION_TIMEOUT = int(os.environ.get("MOTION_TIMEOUT", 300))  # display off after no motion
@@ -79,61 +88,135 @@ def setup_gpio():
 # DISPLAY CONTROL
 # ============================================================================
 
+def session_env():
+    """Environment that lets a tool reach the user's Wayland compositor.
+
+    This runs as a systemd service, so it starts with no session variables.
+    wlr-randr and wlopm both need XDG_RUNTIME_DIR and WAYLAND_DISPLAY to find
+    the compositor socket; the socket name is discovered rather than assumed,
+    because it is wayland-0 on some images and wayland-1 on others.
+    """
+    env = dict(os.environ)
+    runtime = env.get('XDG_RUNTIME_DIR') or '/run/user/{}'.format(os.getuid())
+    env['XDG_RUNTIME_DIR'] = runtime
+    if not env.get('WAYLAND_DISPLAY'):
+        try:
+            sockets = sorted(name for name in os.listdir(runtime)
+                             if name.startswith('wayland-') and not name.endswith('.lock'))
+        except OSError:
+            sockets = []
+        if sockets:
+            env['WAYLAND_DISPLAY'] = sockets[0]
+    return env
+
+
+_WLR_OUTPUT = None
+
+
+def wlr_output(env):
+    """Name of the first connected output, e.g. HDMI-A-1. Cached."""
+    global _WLR_OUTPUT
+    if _WLR_OUTPUT is None:
+        _WLR_OUTPUT = ''
+        try:
+            result = subprocess.run(['wlr-randr'], env=env, capture_output=True,
+                                    text=True, timeout=10)
+            for line in result.stdout.splitlines():
+                # Output blocks start in column zero; their properties are indented.
+                if line.strip() and not line[0].isspace():
+                    _WLR_OUTPUT = line.split()[0]
+                    break
+        except Exception:
+            pass
+    return _WLR_OUTPUT
+
+
+def set_display_power(on):
+    """Switch the monitor on or off by whatever means this Pi actually has.
+
+    `vcgencmd display_power` is no longer enough on its own: with the KMS
+    driver that became the default in Bookworm it does not control an HDMI
+    output any more. Try the compositor's own tools first, then fall back
+    through the older mechanisms, and report which one worked.
+    """
+    env = session_env()
+    attempts = []
+
+    if env.get('WAYLAND_DISPLAY'):
+        # wlopm takes a glob, so it needs no output name at all.
+        attempts.append(['wlopm', '--on' if on else '--off', '*'])
+        output = wlr_output(env)
+        if output:
+            attempts.append(['wlr-randr', '--output', output, '--on' if on else '--off'])
+
+    attempts.append(['vcgencmd', 'display_power', '1' if on else '0'])
+    attempts.append(['xset', 'dpms', 'force', 'on' if on else 'off'])
+
+    for command in attempts:
+        if not shutil.which(command[0]):
+            continue
+        try:
+            result = subprocess.run(command, env=env, capture_output=True, timeout=10)
+            if result.returncode == 0:
+                return command[0]
+        except Exception:
+            continue
+    return None
+
+
 def turn_display_on():
     """Turn on HDMI display"""
     global DISPLAY_ON
     if not DISPLAY_ON:
-        subprocess.run(['vcgencmd', 'display_power', '1'], check=False)
+        used = set_display_power(True)
         DISPLAY_ON = True
-        print("Display ON")
+        print("Display ON" + (" (via {})".format(used) if used else " (no mechanism worked)"))
 
 def turn_display_off():
     """Turn off HDMI display to save power"""
     global DISPLAY_ON
     if DISPLAY_ON:
-        subprocess.run(['vcgencmd', 'display_power', '0'], check=False)
+        used = set_display_power(False)
         DISPLAY_ON = False
-        print("Display OFF")
+        print("Display OFF" + (" (via {})".format(used) if used else " (no mechanism worked)"))
 
 # ============================================================================
 # SCREEN CONTROL
 # ============================================================================
 
-def send_keypress(key):
-    """Send keypress to browser using xdotool"""
+def send_command(action, index=None):
+    """Ask the dashboard to change what it is showing.
+
+    This posts to the backend instead of driving the browser with xdotool.
+    Under Wayland - the session Raspberry Pi OS has used since Bookworm - one
+    client cannot inject keystrokes into another client's window at all, so
+    the old approach failed silently: the button appeared dead. The kiosk
+    polls /api/display/command once a second and acts on what it finds, which
+    works under X11 and Wayland alike and does not care whether the browser
+    has keyboard focus.
+    """
+    payload = {'action': action}
+    if index is not None:
+        payload['index'] = index
     try:
-        # Get the window ID of Chromium
-        result = subprocess.run(
-            ['xdotool', 'search', '--name', 'Chromium'],
-            capture_output=True,
-            text=True,
-            check=False
-        )
-        
-        if result.stdout.strip():
-            window_id = result.stdout.strip().split('\n')[0]
-            
-            # Activate window and send key
-            subprocess.run(['xdotool', 'windowactivate', window_id], check=False)
-            subprocess.run(['xdotool', 'key', key], check=False)
-            print(f"Sent keypress: {key}")
-        else:
-            print("Chromium window not found")
-            
+        res = requests.post(DASHBOARD_URL + '/api/display/command',
+                            json=payload, timeout=5)
+        res.raise_for_status()
+        print(f"Sent command: {action}")
     except Exception as e:
-        print(f"Error sending keypress: {e}")
+        print(f"Could not send command {action}: {e}")
 
 def next_screen():
     """Advance to next screen"""
-    send_keypress('Right')
+    send_command('next')
 
 def previous_screen():
     """Go to previous screen"""
-    send_keypress('Left')
+    send_command('prev')
 
 def refresh_screen():
     """Refresh current screen data"""
-    send_keypress('r')
+    send_command('refresh')
 
 # ============================================================================
 # BUTTON HANDLER
@@ -159,10 +242,10 @@ def wake_browser():
     """
     Nudge the page so it drops its screensaver.
 
-    The kiosk treats any keypress as a sign of life; Shift is the one key that
-    changes nothing on screen.
+    A `wake` command counts as a sign of life without changing which screen
+    is showing, which is what motion should do.
     """
-    send_keypress('shift')
+    send_command('wake')
 
 
 def check_motion():
@@ -176,8 +259,8 @@ def check_motion():
             turn_display_on()
         elif SCREENSAVER["enabled"]:
             idle_time = (datetime.now() - LAST_MOTION).total_seconds()
-            # Only poke the browser if it had time to fall asleep, so we're not
-            # firing xdotool every second someone walks past.
+            # Only poke the browser if it had time to fall asleep, so we're
+            # not posting a wake command every second someone walks past.
             if idle_time >= SCREENSAVER["idle_seconds"]:
                 print("Motion detected - waking the dashboard from the screensaver")
                 wake_browser()

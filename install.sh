@@ -81,11 +81,17 @@ sudo apt-get install -y \
     git \
     "$CHROMIUM_PKG"
 
-# X11-only helpers, and the GPIO library. Neither is fatal if unavailable:
-# unclutter/xdotool don't exist on a Wayland-only image, and python3-rpi.gpio
-# is meaningless off a Pi. kiosk.sh guards for their absence.
-sudo apt-get install -y unclutter xdotool 2>/dev/null \
-    || echo -e "${YELLOW}  (unclutter/xdotool unavailable - fine on Wayland)${NC}"
+# Optional helpers. None is fatal if unavailable, and the code checks for
+# each before using it:
+#   unclutter  - hides the idle cursor, X11 only
+#   wlr-randr  - switches the monitor off on Wayland, where vcgencmd no longer
+#                does under the KMS driver
+#   wlopm      - same job, simpler interface; not on every image
+sudo apt-get install -y unclutter 2>/dev/null \
+    || echo -e "${YELLOW}  (unclutter unavailable - fine on Wayland)${NC}"
+sudo apt-get install -y wlr-randr 2>/dev/null \
+    || echo -e "${YELLOW}  (wlr-randr unavailable - fine on X11)${NC}"
+sudo apt-get install -y wlopm 2>/dev/null || true
 if [ "$IS_PI" = true ]; then
     sudo apt-get install -y python3-rpi.gpio \
         || echo -e "${YELLOW}  (python3-rpi.gpio unavailable - pip will provide it)${NC}"

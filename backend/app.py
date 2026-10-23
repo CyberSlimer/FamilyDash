@@ -14,6 +14,7 @@ import requests
 from bs4 import BeautifulSoup
 import json
 import re
+import threading
 import uuid
 from urllib.parse import urlparse
 
@@ -1532,6 +1533,57 @@ def reset_display_config():
     db.session.commit()
     return jsonify({'message': 'Display reset to defaults',
                     'config': json.loads(json.dumps(DEFAULT_DISPLAY)), 'revision': revision})
+
+
+# Screen commands from the hardware controller.
+#
+# The controller used to drive the browser with `xdotool key Right`. That can
+# never work under Wayland, which Raspberry Pi OS has used since Bookworm: a
+# client may not inject input into another client's window, by design. So the
+# button silently did nothing. Instead the controller posts a command here and
+# the kiosk polls for it, which is display-server agnostic and works whether
+# or not the browser happens to have focus.
+#
+# Held in memory rather than in the settings table: a button press is
+# ephemeral, it should not survive a restart, and persisting it would mean a
+# database write per press and a database read every second from the poll.
+DISPLAY_COMMANDS = ('next', 'prev', 'refresh', 'wake', 'screen')
+
+_display_command = {'seq': 0, 'action': None, 'index': None}
+_display_command_lock = threading.Lock()
+
+
+@app.route('/api/display/command', methods=['GET', 'POST'])
+def display_command():
+    """GET the latest screen command, or POST a new one.
+
+    The kiosk watches `seq`; any increase means there is a command it has not
+    run yet. A counter rather than a queue, so a kiosk that misses a poll or
+    reloads mid-press just resyncs instead of replaying a backlog.
+    """
+    global _display_command
+
+    if request.method == 'GET':
+        with _display_command_lock:
+            return jsonify(dict(_display_command))
+
+    data = request.get_json(silent=True) or {}
+    action = str(data.get('action') or '').strip().lower()
+    if action not in DISPLAY_COMMANDS:
+        return jsonify({'error': 'Unknown action: ' + (action or '(none)'),
+                        'allowed': list(DISPLAY_COMMANDS)}), 400
+
+    index = None
+    if action == 'screen':
+        try:
+            index = int(data['index'])
+        except (KeyError, TypeError, ValueError):
+            return jsonify({'error': 'A "screen" command needs an integer "index"'}), 400
+
+    with _display_command_lock:
+        _display_command = {'seq': _display_command['seq'] + 1,
+                            'action': action, 'index': index}
+        return jsonify(dict(_display_command))
 
 
 @app.route('/api/display/revision', methods=['GET'])
