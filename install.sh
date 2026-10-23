@@ -72,6 +72,9 @@ if ! apt-cache show chromium-browser > /dev/null 2>&1; then
 fi
 echo "Using Chromium package: $CHROMIUM_PKG"
 
+# fonts-noto-color-emoji matters more than it sounds: the dashboard labels
+# weather, wind and sun times with emoji, and without an emoji font every one
+# of them renders as an empty tofu box on the wall.
 sudo apt-get install -y \
     python3 \
     python3-pip \
@@ -79,6 +82,7 @@ sudo apt-get install -y \
     python3-venv \
     curl \
     git \
+    fonts-noto-color-emoji \
     "$CHROMIUM_PKG"
 
 # Optional helpers. None is fatal if unavailable, and the code checks for

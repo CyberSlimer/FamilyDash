@@ -58,6 +58,11 @@ fi
 
 FLAGS=(
     --kiosk
+    # Without this Chromium looks for a system keyring to encrypt its cookie
+    # store in, finds none on a freshly imaged Pi, and puts up a modal
+    # "Choose password for new keyring" dialog that blocks the page from ever
+    # rendering - a white screen with no error anywhere in the logs.
+    --password-store=basic
     --noerrdialogs
     --disable-infobars
     --disable-session-crashed-bubble
