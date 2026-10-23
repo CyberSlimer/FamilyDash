@@ -7,6 +7,10 @@ Wants=network-online.target
 
 [Service]
 Type=simple
+# Without this Python buffers stdout whenever it is not a terminal,
+# so print() output never reaches the journal and the service looks
+# silent even while it is working.
+Environment=PYTHONUNBUFFERED=1
 User=@@RUN_USER@@
 WorkingDirectory=@@APP_DIR@@/backend
 ExecStart=@@PYTHON@@ @@APP_DIR@@/backend/app.py

@@ -92,10 +92,10 @@ sudo apt-get install -y unclutter 2>/dev/null \
 sudo apt-get install -y wlr-randr 2>/dev/null \
     || echo -e "${YELLOW}  (wlr-randr unavailable - fine on X11)${NC}"
 sudo apt-get install -y wlopm 2>/dev/null || true
-if [ "$IS_PI" = true ]; then
-    sudo apt-get install -y python3-rpi.gpio \
-        || echo -e "${YELLOW}  (python3-rpi.gpio unavailable - pip will provide it)${NC}"
-fi
+# GPIO deliberately comes from pip (rpi-lgpio), not apt. The apt package is
+# RPi.GPIO, whose edge detection needs the sysfs GPIO interface the kernel
+# removed in 6.6 - so on Trixie the button raises "Failed to add edge
+# detection". rpi-lgpio offers the same API over /dev/gpiochip.
 
 # ---------------------------------------------------------------------------
 echo -e "${GREEN}[3/$TOTAL] Creating the Python virtualenv...${NC}"
