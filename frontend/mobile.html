@@ -819,6 +819,45 @@
         .pv-row:last-child { border-bottom: none; }
         .pv-row small { font-size: 0.72em; opacity: 0.75; display: block; }
         .pv-accent { color: var(--pv-accent); }
+        .pv-dinner {
+            margin-top: 30px;
+            padding: 22px 32px;
+            background: var(--pv-card);
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            display: flex;
+            align-items: center;
+            gap: 28px;
+            flex-shrink: 0;
+        }
+        .pv-dinner-label {
+            font-size: 1.2em;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--pv-accent);
+            white-space: nowrap;
+        }
+        .pv-dinner-name {
+            font-size: 2.4em;
+            font-weight: 300;
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .pv-dinner.empty .pv-dinner-name { font-size: 1.8em; opacity: 0.55; }
+        .pv-dinner-meta { font-size: 1.1em; opacity: 0.75; white-space: nowrap; }
+        .pv-dinner-stock {
+            font-size: 1.1em;
+            padding: 8px 18px;
+            border-radius: 999px;
+            white-space: nowrap;
+            background: rgba(255, 255, 255, 0.14);
+        }
+        .pv-dinner-stock.ready { background: rgba(80, 200, 120, 0.3); }
+        .pv-dinner-stock.warn  { background: rgba(255, 209, 102, 0.3); }
+        .pv-dinner-stock.short { background: rgba(255, 120, 120, 0.3); }
         .pv-empty { font-size: 1.3em; opacity: 0.6; padding: 12px 0; }
 
         .pv-photo-stage { position: absolute; inset: 0; background: #000; overflow: hidden; }
@@ -863,6 +902,26 @@
             min-width: 100px;
         }
         .preview-note { font-size: 0.8em; opacity: 0.65; margin-top: 8px; line-height: 1.45; }
+
+        /* ---- Wall remote ----
+           The controls above drive the preview on this phone. These drive the
+           actual wall, through the same endpoint the physical button used. */
+        .wall-remote {
+            margin-top: 14px;
+            padding-top: 14px;
+            border-top: 1px solid rgba(0, 0, 0, 0.08);
+        }
+        .wall-remote-label { font-size: 0.85em; font-weight: 600; }
+        .wall-remote-hint { font-size: 0.8em; opacity: 0.65; margin-top: 2px; line-height: 1.45; }
+        .wall-remote-row {
+            display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px;
+        }
+        .wall-remote-status {
+            font-size: 0.8em; margin-top: 8px; min-height: 1.2em; line-height: 1.45;
+        }
+        .wall-remote-status.ok { color: #2f7a4f; }
+        .wall-remote-status.warn { color: #8a5a00; }
+        .wall-remote-status.bad { color: #a33; }
 
         /* ---- Display tab ---- */
         .screen-row {
@@ -1051,6 +1110,23 @@
                             onclick="togglePreviewSaver()">Screensaver</button>
                 </div>
                 <div class="preview-note" id="preview-note"></div>
+
+                <div class="wall-remote">
+                    <div class="wall-remote-label">Drive the wall from here</div>
+                    <div class="wall-remote-hint">The wall keeps rotating on its own
+                        schedule; these jump it right now.</div>
+                    <div class="wall-remote-row">
+                        <button class="btn btn-secondary btn-small"
+                                onclick="wallCommand('prev')">‹ Back</button>
+                        <button class="btn btn-primary btn-small"
+                                onclick="wallCommand('screen')">Show this screen</button>
+                        <button class="btn btn-secondary btn-small"
+                                onclick="wallCommand('next')">Next ›</button>
+                        <button class="btn btn-secondary btn-small"
+                                onclick="wallCommand('refresh')">Refresh its data</button>
+                    </div>
+                    <div class="wall-remote-status" id="wall-remote-status"></div>
+                </div>
             </div>
 
             <div class="card">
@@ -1075,6 +1151,11 @@
                 <label class="toggle-label">
                     <input type="checkbox" id="display-indicators"> Show the dots at the bottom
                 </label>
+                <label class="toggle-label">
+                    <input type="checkbox" id="display-home-focus"> Come back to the first
+                    screen between the others
+                </label>
+                <div class="wall-remote-hint" id="home-focus-hint"></div>
             </div>
 
             <div class="card">
@@ -2721,6 +2802,7 @@
         // Controls that just write a value: any change saves the whole config.
         const DISPLAY_INPUTS = [
             'display-rotation', 'display-24h', 'display-indicators',
+            'display-home-focus',
             'theme-primary', 'theme-secondary', 'theme-text', 'theme-accent',
             'theme-font', 'theme-scale', 'theme-opacity',
             'saver-enabled', 'saver-idle', 'saver-interval', 'saver-shuffle', 'saver-clock',
@@ -2756,9 +2838,27 @@
             }
         }
 
+        function homeFocusHint() {
+            const hint = document.getElementById('home-focus-hint');
+            if (!hint) return;
+            const screens = previewScreens();
+            const home = SCREEN_LABELS[screens[0].id] || screens[0].id;
+            if (!document.getElementById('display-home-focus').checked) {
+                hint.textContent = 'Every screen gets an equal turn, in order.';
+            } else if (screens.length <= 2) {
+                hint.textContent = `${home} is first, but with only ${screens.length} `
+                    + 'screen(s) on there is nothing to come back from yet.';
+            } else {
+                hint.textContent = `${home} shows between every other screen, so it is `
+                    + 'up about half the time. Drag a different screen to the top of '
+                    + 'Screens above to make that one the home screen instead.';
+            }
+        }
+
         function renderDisplay() {
             if (!displayConfig) return;
             const c = displayConfig;
+            homeFocusHint();
 
             document.getElementById('screen-rows').innerHTML = c.screens.map((screen, i) => `
                 <div class="screen-row ${screen.enabled ? '' : 'is-off'}">
@@ -2782,6 +2882,7 @@
             document.getElementById('display-rotation').value = c.rotation_interval;
             document.getElementById('display-24h').checked = !!c.clock_24h;
             document.getElementById('display-indicators').checked = c.show_indicators !== false;
+            document.getElementById('display-home-focus').checked = c.home_focus !== false;
 
             document.getElementById('theme-primary').value = c.theme.primary;
             document.getElementById('theme-secondary').value = c.theme.secondary;
@@ -2822,6 +2923,7 @@
                 rotation_interval: parseInt(document.getElementById('display-rotation').value, 10) || 30,
                 clock_24h: document.getElementById('display-24h').checked,
                 show_indicators: document.getElementById('display-indicators').checked,
+                home_focus: document.getElementById('display-home-focus').checked,
                 theme: {
                     primary: document.getElementById('theme-primary').value,
                     secondary: document.getElementById('theme-secondary').value,
@@ -2844,6 +2946,7 @@
 
         function queueDisplaySave() {
             updateThemePreview();
+            homeFocusHint();
             renderPreview();
             clearTimeout(saveTimer);
             saveTimer = setTimeout(saveDisplay, 600);
@@ -3011,6 +3114,7 @@
 
         let previewData = null;       // {events, meals, grocery, recipes, pantry}
         let previewIndex = 0;
+        let previewLastSpoke = 0;   // mirrors the wall's home-focused rotation
         let previewTimer = null;
         let previewPlaying = true;
         let previewSaverOn = false;
@@ -3038,7 +3142,8 @@
             const weekEnd = new Date(today); weekEnd.setDate(weekEnd.getDate() + 7);
             const [events, meals, grocery, recipes, pantry] = await Promise.all([
                 grab(`/calendar/events?start_date=${today.toISOString()}&end_date=${weekEnd.toISOString()}`, []),
-                grab(`/meals?start_date=${today.toISOString()}&end_date=${weekEnd.toISOString()}`, []),
+                grab(`/meals?start_date=${today.toISOString()}&end_date=${weekEnd.toISOString()}`
+                     + '&with_availability=1', []),
                 grab('/grocery', []),
                 grab('/recipes?favorite=true', []),
                 grab('/pantry?expiring_soon=1', []),
@@ -3070,6 +3175,30 @@
             return items.map(render).join('');
         }
 
+        function previewDinnerHtml(meals) {
+            const today = dateInputValue(new Date());
+            const forToday = (meals || []).filter(m => m.date === today);
+            const dinner = forToday.find(m => (m.meal_type || '').toLowerCase() === 'dinner')
+                || (forToday.length === 1 ? forToday[0] : null);
+
+            if (!dinner || !dinner.recipe_name) {
+                return '<div class="pv-dinner empty"><span class="pv-dinner-label">Dinner</span>'
+                     + '<span class="pv-dinner-name">Nothing planned for tonight</span></div>';
+            }
+            let extra = '';
+            if (dinner.cooked_at) {
+                extra = '<span class="pv-dinner-meta">✓ cooked</span>';
+            } else if (dinner.total) {
+                const short = dinner.total - dinner.have;
+                const cls = short === 0 ? 'ready' : (short <= 2 ? 'warn' : 'short');
+                const label = short === 0 ? 'all ingredients in'
+                                          : `${dinner.have} of ${dinner.total} in`;
+                extra = `<span class="pv-dinner-stock ${cls}">${label}</span>`;
+            }
+            return '<div class="pv-dinner"><span class="pv-dinner-label">Dinner</span>'
+                 + `<span class="pv-dinner-name">${esc(dinner.recipe_name)}</span>${extra}</div>`;
+        }
+
         function previewScreenHtml(id) {
             const d = previewData || { events: [], meals: [], grocery: [], recipes: [], pantry: [] };
 
@@ -3098,7 +3227,8 @@
                                         { weekday: 'short', month: 'short', day: 'numeric' })}</small>
                                 </div>`, 'Nothing this week')}
                         </div>
-                    </div>`;
+                    </div>
+                    ${previewDinnerHtml(d.meals)}`;
             }
 
             if (id === 'meals') {
@@ -3239,7 +3369,7 @@
                 previewTimer = setTimeout(() => {
                     previewPhotoIndex++;
                     if (!previewSaverOn && previewPhotoIndex % Math.max(displayPhotos.length, 1) === 0) {
-                        previewStep(1);
+                        previewAutoAdvance();
                         return;
                     }
                     renderPreview();
@@ -3249,15 +3379,30 @@
             }
             const seconds = screens[previewIndex].duration || displayConfig.rotation_interval || 30;
             // Cap the wait so a 5-minute screen doesn't make the preview look stuck.
-            previewTimer = setTimeout(() => previewStep(1), Math.min(seconds, 12) * 1000);
+            previewTimer = setTimeout(previewAutoAdvance, Math.min(seconds, 12) * 1000);
         }
 
-        function previewStep(delta) {
+        function previewShow(index) {
             const screens = previewScreens();
-            previewIndex = ((previewIndex + delta) % screens.length + screens.length) % screens.length;
+            previewIndex = ((index % screens.length) + screens.length) % screens.length;
+            if (previewIndex !== 0) previewLastSpoke = previewIndex;
             previewSaverOn = false;
             renderPreview();
             schedulePreview();
+        }
+
+        function previewStep(delta) { previewShow(previewIndex + delta); }
+
+        // Mirrors the wall's own rotation, including the home hub, so the
+        // preview keeps being worth trusting about what the wall will do.
+        function previewAutoAdvance() {
+            const screens = previewScreens();
+            if (displayConfig.home_focus === false || screens.length <= 2) {
+                previewStep(1);
+                return;
+            }
+            const spokes = screens.length - 1;
+            previewShow(previewIndex === 0 ? (previewLastSpoke % spokes) + 1 : 0);
         }
 
         function togglePreviewPlay() {
@@ -3270,6 +3415,90 @@
             previewSaverOn = !previewSaverOn;
             renderPreview();
             schedulePreview();
+        }
+
+        // =============================================
+        // WALL REMOTE
+        //
+        // The physical button posted {"action": "next"} to
+        // /api/display/command and the kiosk polled for it. That makes the
+        // button one HTTP client among many rather than special hardware, so
+        // the phone can do everything it did - and jump straight to a screen,
+        // which the button could not.
+        // =============================================
+
+        let wallStatusTimer = null;
+
+        function wallStatus(text, kind) {
+            const status = document.getElementById('wall-remote-status');
+            if (!status) return;
+            status.textContent = text;
+            status.className = 'wall-remote-status' + (kind ? ' ' + kind : '');
+            clearTimeout(wallStatusTimer);
+            if (text) {
+                wallStatusTimer = setTimeout(() => wallStatus('', ''), 6000);
+            }
+        }
+
+        async function kioskSilentFor() {
+            // null means "could not tell", which is different from "it is awake".
+            try {
+                const res = await fetch(`${API_BASE}/health`, { cache: 'no-store' });
+                if (!res.ok) return null;
+                const data = await res.json();
+                return data.kiosk_last_seen_seconds;
+            } catch (error) {
+                return null;
+            }
+        }
+
+        async function wallCommand(action) {
+            if (API_BASE.replace(/\/api$/, '') === DEMO_SERVER) {
+                wallStatus('The demo server has no wall to drive. Connect to your '
+                           + 'own dashboard first.', 'warn');
+                return;
+            }
+
+            const screens = previewScreens();
+            const payload = { action };
+            let sent;
+            if (action === 'screen') {
+                payload.index = previewIndex;   // preview order is the wall's rotation order
+                const current = screens[previewIndex] || {};
+                sent = `Wall jumped to ${SCREEN_LABELS[current.id] || current.id}.`;
+            } else {
+                sent = { next: 'Wall advanced a screen.',
+                         prev: 'Wall stepped back a screen.',
+                         refresh: 'Wall is reloading its data.' }[action] || 'Sent to the wall.';
+            }
+
+            wallStatus('Sending…', '');
+            try {
+                const res = await fetch(`${API_BASE}/display/command`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (!res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    throw new Error(data.error || `HTTP ${res.status}`);
+                }
+            } catch (error) {
+                wallStatus(`Could not reach the dashboard: ${error.message}`, 'bad');
+                return;
+            }
+
+            // The backend accepting a command is not the same as the wall acting
+            // on it - the kiosk has to poll. Say which one we actually know.
+            const silent = await kioskSilentFor();
+            if (silent === null) {
+                wallStatus(sent + ' (Could not check whether the wall is awake.)', 'warn');
+            } else if (silent > 10) {
+                wallStatus(`Queued, but the wall has not checked in for ${Math.round(silent)}s, `
+                           + 'so it may be asleep or the browser may have died.', 'warn');
+            } else {
+                wallStatus(sent, 'ok');
+            }
         }
 
         function previewNote() {

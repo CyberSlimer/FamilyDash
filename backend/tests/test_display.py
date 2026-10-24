@@ -68,6 +68,23 @@ class ConfigTests(DisplayTestCase):
         self.assertEqual(config['rotation_interval'], 45)
         self.assertEqual(config['theme']['primary'], '#112233')
 
+    def test_home_focus_defaults_on_and_round_trips(self):
+        self.assertIs(self.get_config()['home_focus'], True)
+        self.put_config(home_focus=False)
+        self.assertIs(self.get_config()['home_focus'], False)
+        self.put_config(home_focus=True)
+        self.assertIs(self.get_config()['home_focus'], True)
+
+    def test_home_focus_survives_an_unrelated_save(self):
+        # The phone sends the whole config on every change, but a scripted PUT
+        # or an older build of the app may not know this key. An omitted key
+        # falls back to the default here, as every other setting does, and the
+        # default is on - so the failure mode is a home screen, not a surprise.
+        self.put_config(home_focus=False)
+        self.put_config(rotation_interval=45)
+        self.assertEqual(self.get_config()['rotation_interval'], 45)
+        self.assertIs(self.get_config()['home_focus'], True)
+
     def test_rotation_interval_is_clamped(self):
         self.put_config(rotation_interval=99999)
         self.assertEqual(self.get_config()['rotation_interval'], 3600)

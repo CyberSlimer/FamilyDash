@@ -8,6 +8,7 @@ import RPi.GPIO as GPIO
 import shutil
 import time
 import requests
+from collections import deque
 from datetime import datetime, timedelta
 import subprocess
 import os
@@ -25,8 +26,41 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 load_dotenv(os.path.join(PROJECT_ROOT, 'config.env'))
 
 # GPIO Pin Configuration
-BUTTON_PIN = int(os.environ.get("BUTTON_PIN", 17))  # Physical button to advance screens
-MOTION_PIN = int(os.environ.get("MOTION_PIN", 27))  # PIR motion sensor
+
+
+def parse_pin(value, default):
+    """Read a BCM pin number, treating anything off-like as "no such device".
+
+    Missing hardware is a normal state for this wall rather than an error: the
+    screens rotate on a timer of their own and the phone can drive them
+    directly, so a button that was never wired - or one that has broken - only
+    needs to be left out. `BUTTON_PIN=off` does that without disturbing the
+    motion sensor, and the same goes the other way round.
+    """
+    text = str(value if value is not None else default).strip().lower()
+    if text in ('', '0', '-', 'off', 'no', 'none', 'false', 'disabled'):
+        return None
+    try:
+        return int(text)
+    except ValueError:
+        print(f"Could not read a pin number from {value!r}; treating it as off")
+        return None
+
+
+BUTTON_PIN = parse_pin(os.environ.get("BUTTON_PIN"), 17)  # advances screens
+MOTION_PIN = parse_pin(os.environ.get("MOTION_PIN"), 27)  # PIR motion sensor
+
+# Set once the button has proved it rests high; cleared again if it starts
+# chattering. Nothing reads the button while this is False.
+BUTTON_READY = False
+
+# A switch that has failed closed, or whose contacts are breaking up, fires
+# the edge callback over and over. Past this many presses in this window we
+# stop believing it: a wall that flips screens by itself is worse than a wall
+# whose button does nothing.
+PRESS_TIMES = deque()
+STORM_PRESSES = 8
+STORM_WINDOW = 10.0
 
 # Dashboard URL
 DASHBOARD_URL = "http://localhost:{}".format(os.environ.get("API_PORT", "5000"))
@@ -69,20 +103,54 @@ def refresh_config():
 # GPIO SETUP
 # ============================================================================
 
+def button_rests_high():
+    """Sample the button pin over half a second; True if it is idle throughout.
+
+    The internal pull-up holds an untouched button HIGH. A pin already sitting
+    LOW means the switch is shorted, wired to ground, or broken closed - and
+    attaching a FALLING-edge callback to it would hand the screens to a fault.
+    Half a second of samples also catches contacts that are breaking up, which
+    a single read would sail straight past.
+    """
+    low = 0
+    for _ in range(10):
+        if GPIO.input(BUTTON_PIN) == GPIO.LOW:
+            low += 1
+        time.sleep(0.05)
+    if low:
+        print(f"Button: GPIO {BUTTON_PIN} is not resting high ({low} of 10 samples "
+              "low), so it is being ignored - a stuck or chattering switch would "
+              "advance the screens by itself. Set BUTTON_PIN=off in config.env to "
+              "stop looking for it.")
+        return False
+    return True
+
+
 def setup_gpio():
     """Initialize GPIO pins"""
+    global BUTTON_READY
+
     GPIO.setmode(GPIO.BCM)
     GPIO.setwarnings(False)
-    
-    # Button with pull-up resistor (button connects to ground)
-    GPIO.setup(BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-    
-    # PIR motion sensor
-    GPIO.setup(MOTION_PIN, GPIO.IN)
-    
     print("GPIO initialized")
-    print(f"Button: GPIO {BUTTON_PIN}")
-    print(f"Motion: GPIO {MOTION_PIN}")
+
+    # Button with pull-up resistor (button connects to ground)
+    if BUTTON_PIN is None:
+        print("Button: off - the screens rotate on their own and the phone can "
+              "drive them from the Display tab")
+    else:
+        GPIO.setup(BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
+        BUTTON_READY = button_rests_high()
+        if BUTTON_READY:
+            print(f"Button: GPIO {BUTTON_PIN}")
+
+    # PIR motion sensor
+    if MOTION_PIN is None:
+        print("Motion: off - the display stays on and the screensaver runs on its "
+              "own idle timer")
+    else:
+        GPIO.setup(MOTION_PIN, GPIO.IN)
+        print(f"Motion: GPIO {MOTION_PIN}")
 
 # ============================================================================
 # DISPLAY CONTROL
@@ -224,15 +292,36 @@ def refresh_screen():
 
 def button_callback(channel):
     """Handle button press"""
-    global LAST_MOTION
-    
+    global LAST_MOTION, BUTTON_READY
+
+    if not BUTTON_READY:
+        return
+
     # Debounce
     time.sleep(0.2)
-    if GPIO.input(BUTTON_PIN) == GPIO.LOW:  # Still pressed
-        print("Button pressed!")
-        LAST_MOTION = datetime.now()
-        turn_display_on()
-        next_screen()
+    if GPIO.input(BUTTON_PIN) != GPIO.LOW:  # released again; electrical noise
+        return
+
+    now = time.monotonic()
+    PRESS_TIMES.append(now)
+    while PRESS_TIMES and now - PRESS_TIMES[0] > STORM_WINDOW:
+        PRESS_TIMES.popleft()
+    if len(PRESS_TIMES) >= STORM_PRESSES:
+        BUTTON_READY = False
+        try:
+            GPIO.remove_event_detect(BUTTON_PIN)
+        except Exception:
+            pass
+        print(f"Button on GPIO {BUTTON_PIN} reported {len(PRESS_TIMES)} presses in "
+              f"{STORM_WINDOW:.0f}s, which is a fault rather than a person. "
+              "Ignoring it until the service restarts; the screens keep rotating "
+              "and the phone can still drive them.")
+        return
+
+    print("Button pressed!")
+    LAST_MOTION = datetime.now()
+    turn_display_on()
+    next_screen()
 
 # ============================================================================
 # MOTION SENSOR HANDLER
@@ -251,6 +340,12 @@ def wake_browser():
 def check_motion():
     """Check motion sensor and control display"""
     global LAST_MOTION, DISPLAY_ON
+
+    if MOTION_PIN is None:
+        # With no sensor, an unwired pin floats and would read as constant
+        # motion, which would keep the screensaver from ever appearing. Leave
+        # the display on and let the browser's own idle timer do the work.
+        return
 
     if GPIO.input(MOTION_PIN):
         # Motion detected
@@ -293,16 +388,21 @@ def main():
     setup_gpio()
     
     # Setup button interrupt
-    GPIO.add_event_detect(
-        BUTTON_PIN,
-        GPIO.FALLING,
-        callback=button_callback,
-        bouncetime=300
-    )
-    
+    if BUTTON_READY:
+        GPIO.add_event_detect(
+            BUTTON_PIN,
+            GPIO.FALLING,
+            callback=button_callback,
+            bouncetime=300
+        )
+
     print("Ready!")
-    print("- Press button to advance screens")
-    print("- Motion sensor will wake display")
+    if BUTTON_READY:
+        print("- Press button to advance screens")
+    else:
+        print("- No working button; advance screens from the phone's Display tab")
+    if MOTION_PIN is not None:
+        print("- Motion sensor will wake display")
     print("- Display settings are read from the app every "
           f"{CONFIG_POLL_SECONDS}s")
     print("- Press Ctrl+C to exit")

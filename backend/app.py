@@ -1289,6 +1289,12 @@ DEFAULT_DISPLAY = {
     'rotation_interval': 30,
     'clock_24h': False,
     'show_indicators': True,
+    # With this on, the rotation returns to the first enabled screen between
+    # every other one - home, meals, home, grocery, home - so the wall spends
+    # about half its life on the screen the family actually glances at, and the
+    # rest is a visiting rotation rather than an equal share. Off gives the
+    # plain round robin.
+    'home_focus': True,
     'theme': {
         'primary': '#667eea',
         'secondary': '#764ba2',
@@ -1347,6 +1353,7 @@ def _validate_display(incoming):
         base['rotation_interval']))
     base['clock_24h'] = bool(incoming.get('clock_24h', base['clock_24h']))
     base['show_indicators'] = bool(incoming.get('show_indicators', base['show_indicators']))
+    base['home_focus'] = bool(incoming.get('home_focus', base['home_focus']))
 
     theme_in = incoming.get('theme') or {}
     theme = base['theme']

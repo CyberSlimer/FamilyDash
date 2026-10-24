@@ -127,6 +127,56 @@
             border: 1px solid rgba(255, 255, 255, 0.2);
         }
 
+        /* ---- Tonight's dinner, banded across the foot of the home screen ----
+           Sized to be read from across the room rather than leaned into: the
+           dish name carries, the rest supports it. flex-shrink: 0 keeps the
+           band intact and lets the columns above give up the space instead. */
+        .dinner-band {
+            margin-top: 30px;
+            padding: 22px 32px;
+            flex-shrink: 0;
+            background: var(--fd-card);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            display: flex;
+            align-items: center;
+            gap: 28px;
+        }
+
+        .dinner-label {
+            font-size: 1.2em;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--fd-accent);
+            white-space: nowrap;
+        }
+
+        .dinner-name {
+            font-size: 2.4em;
+            font-weight: 300;
+            flex: 1;
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .dinner-band.empty .dinner-name { font-size: 1.8em; opacity: 0.55; }
+
+        .dinner-meta { font-size: 1.1em; opacity: 0.75; white-space: nowrap; }
+
+        .dinner-stock {
+            font-size: 1.1em;
+            padding: 8px 18px;
+            border-radius: 999px;
+            white-space: nowrap;
+            background: rgba(255, 255, 255, 0.14);
+        }
+        .dinner-stock.ready { background: rgba(80, 200, 120, 0.3); }
+        .dinner-stock.warn  { background: rgba(255, 209, 102, 0.3); }
+        .dinner-stock.short { background: rgba(255, 120, 120, 0.3); }
+
         /* Each card scrolls on its own; hide scrollbars on the kiosk display */
         .two-column .card {
             overflow-y: auto;
@@ -724,6 +774,9 @@
                 </div>
             </div>
         </div>
+        <!-- Tonight's dinner, on the screen the wall spends most of its time
+             on, so nobody has to wait for the meal plan to come round. -->
+        <div class="dinner-band" id="dinner-band"></div>
     </div>
 
     <!-- Screen 2: Meal Plan -->
@@ -822,6 +875,7 @@
             rotation_interval: 30,
             clock_24h: false,
             show_indicators: true,
+            home_focus: true,
             theme: {
                 primary: '#667eea', secondary: '#764ba2', text: '#ffffff',
                 accent: '#ffd166', card_opacity: 0.1, scale: 1,
@@ -843,6 +897,7 @@
         let revision = -1;
         let rotation = [];        // enabled screens, in order
         let currentIndex = 0;
+        let lastSpokeIndex = 0;   // the non-home screen the rotation visited last
         let rotationTimer = null;
         let lastInteraction = Date.now();
 
@@ -894,6 +949,9 @@
                 `<div class="indicator-dot${i === 0 ? ' active' : ''}" data-screen="${i}"></div>`).join('');
 
             if (currentIndex >= rotation.length) currentIndex = 0;
+            // Turning screens off can leave this pointing past the end, which
+            // would make the hub skip its way back into range.
+            if (lastSpokeIndex >= rotation.length) lastSpokeIndex = 0;
             showIndex(currentIndex);
         }
 
@@ -914,14 +972,42 @@
             const dot = document.querySelector(`.indicator-dot[data-screen="${currentIndex}"]`);
             if (dot) dot.classList.add('active');
 
+            // Remembered however we arrived - timer, button, phone or keyboard -
+            // so the home-focused rotation always resumes from the screen the
+            // family last actually saw.
+            if (currentIndex !== 0) lastSpokeIndex = currentIndex;
+
             currentScreen = currentIndex;
             refreshCurrentScreen();
             startRotation();               // restart the clock for this screen's duration
         }
 
         function showScreen(index) { showIndex(index); }
+
+        // Stepping by hand stays a plain walk through the list, because that is
+        // what someone pressing "next" expects. Only the unattended rotation
+        // below treats home as a hub.
         function nextScreen() { showIndex(currentIndex + 1); }
         function previousScreen() { showIndex(currentIndex - 1); }
+
+        function homeFocusActive() {
+            // Home plus a single other screen already alternates under the plain
+            // rotation, so the hub pattern only means something past that.
+            return CONFIG.home_focus !== false && rotation.length > 2;
+        }
+
+        function nextSpokeIndex() {
+            // The spokes are indices 1..n-1; carry on from whichever came last.
+            const spokes = rotation.length - 1;
+            if (spokes < 1) return 0;
+            return (lastSpokeIndex % spokes) + 1;
+        }
+
+        function autoAdvance() {
+            if (!homeFocusActive()) { nextScreen(); return; }
+            // home -> next spoke -> home -> the spoke after it -> home ...
+            showIndex(currentIndex === 0 ? nextSpokeIndex() : 0);
+        }
 
         function startRotation() {
             stopRotation();
@@ -930,7 +1016,7 @@
             const seconds = screen.duration || CONFIG.rotation_interval || 30;
             rotationTimer = setTimeout(() => {
                 // Don't rotate behind the screensaver; it has its own slideshow.
-                if (!saverVisible) nextScreen(); else startRotation();
+                if (!saverVisible) autoAdvance(); else startRotation();
             }, seconds * 1000);
         }
 
@@ -1336,6 +1422,55 @@
             }
         }
 
+        async function fetchTodaysDinner() {
+            const band = document.getElementById('dinner-band');
+            if (!band) return;
+            const today = localDateKey(new Date());
+            try {
+                // One day, and with coverage: knowing whether the ingredients
+                // are in is the part that changes what you do next.
+                const res = await fetch(`${API_BASE}/meals?start_date=${today}`
+                    + `&end_date=${today}&with_availability=1`, { cache: 'no-store' });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const meals = await res.json();
+
+                const dinner = meals.find(m => (m.meal_type || '').toLowerCase() === 'dinner')
+                    // A one-meal day is that day's meal whatever it was filed as.
+                    || (meals.length === 1 ? meals[0] : null);
+
+                if (!dinner || !dinner.recipe_name) {
+                    band.className = 'dinner-band empty';
+                    band.innerHTML = '<span class="dinner-label">Dinner</span>'
+                        + '<span class="dinner-name">Nothing planned for tonight</span>';
+                    return;
+                }
+
+                band.className = 'dinner-band';
+                let html = '<span class="dinner-label">Dinner</span>'
+                    + `<span class="dinner-name">${esc(dinner.recipe_name)}</span>`;
+                if (dinner.cooked_at) {
+                    html += '<span class="dinner-meta">✓ cooked</span>';
+                } else if (dinner.total) {
+                    const short = dinner.total - dinner.have;
+                    const cls = short === 0 ? 'ready' : (short <= 2 ? 'warn' : 'short');
+                    const label = short === 0 ? 'all ingredients in'
+                                              : `${dinner.have} of ${dinner.total} in`;
+                    html += `<span class="dinner-stock ${cls}">${label}</span>`;
+                }
+                if (dinner.servings) {
+                    html += `<span class="dinner-meta">serves ${esc(dinner.servings)}</span>`;
+                }
+                band.innerHTML = html;
+            } catch (error) {
+                console.error('Error fetching tonight\'s dinner:', error);
+                // Say nothing rather than something wrong: a stale dish name on
+                // the wall is worse than an empty strip.
+                band.className = 'dinner-band empty';
+                band.innerHTML = '<span class="dinner-label">Dinner</span>'
+                    + '<span class="dinner-name">Unable to load</span>';
+            }
+        }
+
         async function fetchMealPlan() {
             try {
                 const today = new Date();
@@ -1355,8 +1490,12 @@
                 for (let i = 0; i < 7; i++) {
                     const date = new Date(startOfWeek);
                     date.setDate(startOfWeek.getDate() + i);
-                    const dateStr = date.toISOString().split('T')[0];
-                    const isToday = dateStr === today.toISOString().split('T')[0];
+                    // Local keys, not UTC ones. toISOString() rolls over to
+                    // tomorrow during the evening west of UTC, which moved the
+                    // "today" highlight - and the meals under it - by a day at
+                    // exactly the hour someone stands here reading it.
+                    const dateStr = localDateKey(date);
+                    const isToday = dateStr === localDateKey(today);
                     
                     const dayMeals = meals.filter(m => m.date === dateStr);
                     
@@ -1495,6 +1634,7 @@
                 case 'calendar':
                     fetchCalendarEvents();
                     fetchWeather();
+                    fetchTodaysDinner();
                     break;
                 case 'meals':
                     fetchMealPlan();
