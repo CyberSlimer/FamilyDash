@@ -306,7 +306,28 @@ _PREP_WORDS = {
 
 _LEADING_ARTICLES = {'a', 'an', 'the', 'of'}
 
-_PAREN_RE = re.compile(r'\([^)]*\)')
+# Matches an innermost parenthetical only - nothing bracketed inside it. The
+# obvious `\([^)]*\)` stops at the first ")", so a nested note like
+# "bacon (, trimmed, chopped (Note 1))" came back as "bacon )", which then
+# showed up verbatim on the grocery list. Stripping innermost-first and
+# repeating empties the whole nest.
+_PAREN_RE = re.compile(r'\([^()]*\)')
+
+# Recipe sites mark footnotes on the ingredient itself ("1 small carrot*",
+# "frozen corn*"). The marker is never part of the name.
+_FOOTNOTE_RE = re.compile(r'[*†‡¹²³]+')
+
+
+def _strip_parens(text):
+    """Remove every parenthetical, however deeply nested."""
+    s = str(text or '')
+    for _ in range(6):
+        s, found = _PAREN_RE.subn(' ', s)
+        if not found:
+            break
+    # A bracket left unpaired belongs to a note we have just removed, not to
+    # the name.
+    return s.replace('(', ' ').replace(')', ' ')
 _TRAILING_PREP_RE = re.compile(
     r',\s*(?:' + '|'.join(sorted(_PREP_WORDS | {'optional', 'divided', 'to taste'},
                                  key=len, reverse=True)) + r')\b.*$', re.I)
@@ -330,7 +351,8 @@ def _singularize(word):
 
 def clean_name(text):
     """Tidy an ingredient name for display: no parentheticals, no prep clause."""
-    s = _PAREN_RE.sub(' ', str(text or ''))
+    s = _strip_parens(text)
+    s = _FOOTNOTE_RE.sub('', s)
     s = _TRAILING_PREP_RE.sub('', s)
     s = _TO_TASTE_RE.sub(' ', s)
     s = re.sub(r'\s{2,}', ' ', s).strip().strip(',').strip()
@@ -346,7 +368,7 @@ def normalize_name(text):
     if not text:
         return ''
     s = str(text).lower()
-    s = _PAREN_RE.sub(' ', s)
+    s = _strip_parens(s)
     s = _TO_TASTE_RE.sub(' ', s)
     s = s.split(',')[0]              # drop trailing prep clause
     s = _NON_WORD_RE.sub(' ', s)

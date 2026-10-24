@@ -185,6 +185,62 @@ class ParseTests(unittest.TestCase):
         self.assertEqual(i.key, 'kalamata olive')
 
 
+class ImportedIngredientTests(unittest.TestCase):
+    """
+    Lines as they really arrive from a recipe site's structured data.
+
+    All of these came off recipetineats via the URL importer; the nested
+    notes and footnote markers are its house style and used to survive into
+    the grocery list as "bacon )" and "frozen corn* )".
+    """
+
+    def name_of(self, line):
+        return ing.parse(line).name
+
+    def test_nested_parenthetical_leaves_nothing_behind(self):
+        self.assertEqual(
+            self.name_of('120g (4oz) bacon (, excess fat trimmed, chopped (Note 1))'),
+            'bacon')
+
+    def test_doubled_parenthetical(self):
+        self.assertEqual(self.name_of('1/2 cup frozen corn* ((or can or fresh))'),
+                         'frozen corn')
+
+    def test_note_only_parenthetical(self):
+        self.assertEqual(self.name_of('3 tbsp light soy sauce ((Note 5))'),
+                         'light soy sauce')
+
+    def test_footnote_marker_is_not_part_of_the_name(self):
+        self.assertEqual(self.name_of('1/2 cup frozen peas*'), 'frozen peas')
+
+    def test_footnote_marker_does_not_split_the_match_key(self):
+        # "frozen peas*" and "frozen peas" must key the same, or buying peas
+        # would never satisfy the recipe that asked for them.
+        self.assertEqual(ing.parse('1/2 cup frozen peas*').key,
+                         ing.parse('1 cup frozen peas').key)
+
+    def test_leading_pack_size_and_trailing_note(self):
+        item = ing.parse('150g (5oz) chicken breast (, finely sliced into small pieces)')
+        self.assertEqual((item.qty, item.unit, item.name), (150.0, 'g', 'chicken breast'))
+
+    def test_inch_mark_in_a_note_does_not_leak(self):
+        self.assertEqual(self.name_of('1 small carrot* (, peeled and diced 0.75cm / 1/3")'),
+                         'small carrot')
+
+    def test_no_stray_brackets_survive_any_of_them(self):
+        lines = [
+            '2 tbsp oil (, peanut, vegetable or canola)',
+            '2 cups (packed) cooked white rice (, day old (Note 2))',
+            '2.5 tbsp Chinese cooking wine or Mirin ((Note 3))',
+            '1 tbsp oyster sauce ((Note 4))',
+        ]
+        for line in lines:
+            name = self.name_of(line)
+            self.assertNotIn('(', name, line)
+            self.assertNotIn(')', name, line)
+            self.assertTrue(name.strip(), line)
+
+
 class CategoryTests(unittest.TestCase):
     def test_aisles(self):
         self.assertEqual(ing.guess_category('chicken breast'), 'meat')
