@@ -1698,6 +1698,11 @@
                 case 'next':    nextScreen(); break;
                 case 'prev':    showIndex(currentIndex - 1); break;
                 case 'refresh': refreshCurrentScreen(); break;
+                // A deploy replaces this file, but the wall goes on running
+                // the copy it loaded at boot. This is how the new one arrives
+                // without a trip to the Pi. pollCommand's first-poll guard
+                // above keeps it from reloading in a loop.
+                case 'reload':  location.reload(); break;
                 case 'screen':
                     if (Number.isInteger(cmd.index)) showIndex(cmd.index);
                     break;

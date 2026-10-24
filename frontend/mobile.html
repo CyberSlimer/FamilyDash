@@ -1124,6 +1124,8 @@
                                 onclick="wallCommand('next')">Next ›</button>
                         <button class="btn btn-secondary btn-small"
                                 onclick="wallCommand('refresh')">Refresh its data</button>
+                        <button class="btn btn-secondary btn-small"
+                                onclick="wallCommand('reload')">Reload the page</button>
                     </div>
                     <div class="wall-remote-status" id="wall-remote-status"></div>
                 </div>
@@ -3469,7 +3471,9 @@
             } else {
                 sent = { next: 'Wall advanced a screen.',
                          prev: 'Wall stepped back a screen.',
-                         refresh: 'Wall is reloading its data.' }[action] || 'Sent to the wall.';
+                         refresh: 'Wall is reloading its data.',
+                         reload: 'Wall is reloading the page itself.' }[action]
+                       || 'Sent to the wall.';
             }
 
             wallStatus('Sending…', '');
