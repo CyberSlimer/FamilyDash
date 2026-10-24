@@ -52,6 +52,24 @@ Complete wiring instructions for Family Dashboard hardware components.
 | PIR Sensor GND | Ground | 6 | GND |
 | PIR Sensor OUT | Signal | 13 | GPIO 27 |
 
+These are the pins this guide wires up, and the defaults in `config.env`.
+They are not necessarily the pins on a Pi that ran something else first:
+a board inherited from another dashboard may well have its button
+somewhere else entirely.
+
+If the button does nothing, do not guess which pin it is on - a floating
+input rests HIGH exactly like a wired button does, so there is nothing to
+read. Ask it instead:
+
+```bash
+sudo systemctl stop dashboard-hardware
+.venv/bin/python hardware/identify-button.py
+```
+
+Press the button once. It reports the pin, writes `BUTTON_PIN` into
+`config.env` and restarts the service. Pass pin numbers as arguments to
+widen the search.
+
 ## 🔘 Push Button Wiring
 
 ### Parts Needed
