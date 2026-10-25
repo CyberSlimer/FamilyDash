@@ -635,8 +635,7 @@ class ChatTranscriptTests(unittest.TestCase):
         # A photographed cookbook page: the dish name is simply the first
         # line, with nothing marking it up. It used to be swallowed into
         # the description, leaving the recipe nameless.
-        page = "
-".join([
+        page = "\n".join([
             "Buttermilk Cornbread",
             "Prep time: 10 minutes",
             "Serves: 8",
