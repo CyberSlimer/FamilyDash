@@ -2739,8 +2739,14 @@
                 const recipe = await (await fetch(`${API_BASE}/recipes/${id}`)).json();
                 document.getElementById('recipe-view-title').textContent = recipe.name || 'Recipe';
                 const minutes = (recipe.prep_time || 0) + (recipe.cook_time || 0);
-                const steps = String(recipe.instructions || '')
+                // Imported recipes arrive as one line per step; recipes typed in by
+                // hand are often a paragraph or two. Numbering a paragraph makes a
+                // "step 1" four hundred characters long, which is worse than not
+                // numbering at all - so a long line is taken as prose.
+                const lines = String(recipe.instructions || '')
                     .split(/\n\s*\n|\n/).map(line => line.trim()).filter(Boolean);
+                const readsAsSteps = lines.length > 1 && !lines.some(line => line.length > 300);
+                const steps = readsAsSteps ? lines : [];
                 body.innerHTML = `
                     ${recipe.image_url ? `<img class="recipe-photo-preview" src="${esc(recipe.image_url)}" alt="">` : ''}
                     ${recipe.description ? `<p class="modal-intro">${esc(recipe.description)}</p>` : ''}
@@ -2758,7 +2764,9 @@
                     ${steps.length
                         ? `<ol class="help-list">${steps.map(line =>
                               `<li>${esc(line.replace(/^\s*\d+[.)]\s*/, ''))}</li>`).join('')}</ol>`
-                        : '<p class="form-hint">None written down.</p>'}
+                        : lines.length
+                            ? lines.map(line => `<p>${esc(line)}</p>`).join('')
+                            : '<p class="form-hint">None written down.</p>'}
                     ${recipe.source_url
                         ? `<p class="form-hint"><a href="${esc(recipe.source_url)}" target="_blank" rel="noopener">Original page</a></p>` : ''}
                 `;
