@@ -117,6 +117,10 @@ LAST_CONFIG_FETCH = None
 # The rotation last handed to the compositor. None means "not asked yet", so
 # the first config fetch after a restart re-applies whatever was chosen - the
 # rotation survives a reboot without anything being written to system config.
+# When motion last told the page that somebody is here. The page runs its
+# own idle timer and knows nothing about the sensor, so this is what keeps
+# the two in step.
+LAST_WAKE = None
 CURRENT_ROTATION = None
 ROTATIONS = ("normal", "90", "180", "270")
 # Set once while there is no screen to rotate, so the message is said once
@@ -433,6 +437,18 @@ def button_callback(channel):
 # MOTION SENSOR HANDLER
 # ============================================================================
 
+def wake_interval():
+    """
+    How often motion re-asserts "someone is here" to the page.
+
+    The page starts its screensaver after idle_seconds of hearing nothing,
+    so the nudge has to land comfortably inside that window. A quarter of it
+    leaves wide margin without posting a command every second that somebody
+    is moving about the kitchen.
+    """
+    return max(15.0, SCREENSAVER["idle_seconds"] / 4.0)
+
+
 def wake_browser():
     """
     Nudge the page so it drops its screensaver.
@@ -445,7 +461,7 @@ def wake_browser():
 
 def check_motion():
     """Check motion sensor and control display"""
-    global LAST_MOTION, DISPLAY_ON, MOTION_READY, MOTION_HIGH_SINCE
+    global LAST_MOTION, DISPLAY_ON, MOTION_READY, MOTION_HIGH_SINCE, LAST_WAKE
 
     if MOTION_PIN is None or not MOTION_READY:
         # With no sensor the display stays on and the browser's own idle timer
@@ -476,17 +492,24 @@ def check_motion():
         return
 
     if detected:
-        # Motion detected
         if not DISPLAY_ON:
             print("Motion detected - waking display")
             turn_display_on()
+            wake_browser()
+            LAST_WAKE = now
         elif SCREENSAVER["enabled"]:
-            idle_time = (datetime.now() - LAST_MOTION).total_seconds()
-            # Only poke the browser if it had time to fall asleep, so we're
-            # not posting a wake command every second someone walks past.
-            if idle_time >= SCREENSAVER["idle_seconds"]:
-                print("Motion detected - waking the dashboard from the screensaver")
+            # Motion keeps the wall awake; it does not merely rescue a
+            # screensaver that has already started. The old test asked
+            # whether the room had been idle longer than the timeout, but
+            # LAST_MOTION is refreshed by every poll that sees motion, so
+            # with somebody actually in the room it could never be true. The
+            # page then reached its own idle timeout, dropped to photos, and
+            # nothing was ever sent to bring it back.
+            if (LAST_WAKE is None
+                    or (now - LAST_WAKE).total_seconds() >= wake_interval()):
+                print("Motion - telling the wall that someone is here")
                 wake_browser()
+                LAST_WAKE = now
         LAST_MOTION = now
     else:
         # No motion
