@@ -1311,8 +1311,18 @@ SCREEN_TYPES = {
     'photos': 'Photos',
 }
 
+# wlr-randr's --transform values. Anything else is refused rather than
+# handed to a subprocess on the Pi.
+SCREEN_ROTATIONS = ('normal', '90', '180', '270')
+
 DEFAULT_DISPLAY = {
     'rotation_interval': 30,
+    # Which way up the wall is. 'normal' and '180' are landscape, '90' and
+    # '270' portrait; the names are wlr-randr's --transform values, because
+    # the hardware service passes them straight through. The page's own
+    # layout follows the viewport rather than this, so a screen hung sideways
+    # without touching the setting still lays itself out correctly.
+    'screen_rotation': 'normal',
     'clock_24h': False,
     'show_indicators': True,
     # With this on, the rotation returns to the first enabled screen between
@@ -1377,6 +1387,9 @@ def _validate_display(incoming):
     base['rotation_interval'] = int(_clamp(
         incoming.get('rotation_interval', base['rotation_interval']), 5, 3600,
         base['rotation_interval']))
+    rotation = str(incoming.get('screen_rotation', base['screen_rotation'])).strip()
+    if rotation in SCREEN_ROTATIONS:
+        base['screen_rotation'] = rotation
     base['clock_24h'] = bool(incoming.get('clock_24h', base['clock_24h']))
     base['show_indicators'] = bool(incoming.get('show_indicators', base['show_indicators']))
     base['home_focus'] = bool(incoming.get('home_focus', base['home_focus']))

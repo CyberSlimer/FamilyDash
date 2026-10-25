@@ -177,6 +177,45 @@ class ConfigTests(DisplayTestCase):
         self.assertEqual(self.get_config()['rotation_interval'], 30)
 
 
+class ScreenRotationTests(DisplayTestCase):
+    """The value is handed to wlr-randr on the Pi, so it must stay a known one."""
+
+    def test_rotation_round_trips(self):
+        for value in ('90', '180', '270', 'normal'):
+            config = self.client.get('/api/display').get_json()['config']
+            config['screen_rotation'] = value
+            saved = self.client.put('/api/display', json=config)
+            self.assertEqual(saved.status_code, 200)
+            self.assertEqual(saved.get_json()['config']['screen_rotation'], value)
+
+    def test_the_default_is_landscape(self):
+        config = self.client.get('/api/display').get_json()['config']
+        self.assertEqual(config['screen_rotation'], 'normal')
+
+    def test_anything_unknown_falls_back_rather_than_reaching_the_pi(self):
+        # This string ends up as an argv entry for wlr-randr, so an
+        # unrecognised value has to be dropped, not passed along.
+        for value in ('; reboot', 'portrait', '45', '', None, 90):
+            config = self.client.get('/api/display').get_json()['config']
+            config['screen_rotation'] = value
+            saved = self.client.put('/api/display', json=config)
+            self.assertEqual(saved.status_code, 200)
+            self.assertIn(saved.get_json()['config']['screen_rotation'],
+                          ('normal', '90', '180', '270'))
+
+    def test_rotation_survives_a_save_from_another_tab(self):
+        # The Photos tab PUTs the whole config; a key it does not render
+        # must not be flattened back to the default.
+        config = self.client.get('/api/display').get_json()['config']
+        config['screen_rotation'] = '90'
+        self.client.put('/api/display', json=config)
+
+        config = self.client.get('/api/display').get_json()['config']
+        config['screensaver']['interval'] = 11
+        after = self.client.put('/api/display', json=config).get_json()['config']
+        self.assertEqual(after['screen_rotation'], '90')
+
+
 class PhotoScreenOptionTests(DisplayTestCase):
     """The Photos tab is the only place these three are editable."""
 

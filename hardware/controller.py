@@ -93,6 +93,42 @@ LAST_MOTION = datetime.now()
 SCREENSAVER = {"enabled": False, "idle_seconds": MOTION_TIMEOUT}
 LAST_CONFIG_FETCH = None
 
+# The rotation last handed to the compositor. None means "not asked yet", so
+# the first config fetch after a restart re-applies whatever was chosen - the
+# rotation survives a reboot without anything being written to system config.
+CURRENT_ROTATION = None
+ROTATIONS = ("normal", "90", "180", "270")
+
+
+def apply_rotation(value):
+    """Turn the physical output to match the display setting.
+
+    Only acted on when it changes, because this runs every refresh. A failure
+    still counts as "asked", so a Pi whose compositor cannot rotate says so
+    once rather than every thirty seconds; changing the setting asks again.
+    """
+    global CURRENT_ROTATION
+    if value not in ROTATIONS or value == CURRENT_ROTATION:
+        return
+    CURRENT_ROTATION = value
+
+    env = session_env()
+    output = wlr_output(env)
+    if not shutil.which("wlr-randr") or not output:
+        print(f"Screen rotation: asked for {value}, but wlr-randr cannot reach "
+              "an output here - rotate the screen in the OS instead")
+        return
+    try:
+        result = subprocess.run(["wlr-randr", "--output", output, "--transform", value],
+                                env=env, capture_output=True, text=True, timeout=15)
+        if result.returncode == 0:
+            print(f"Screen rotation: {output} now {value}")
+        else:
+            print(f"Screen rotation: wlr-randr refused {value} "
+                  f"({result.stderr.strip() or 'no reason given'})")
+    except Exception as exc:
+        print(f"Screen rotation: could not set {value} ({exc})")
+
 
 def refresh_config():
     """Pull display settings from the backend; keep the last ones on failure."""
@@ -109,6 +145,7 @@ def refresh_config():
         }
         print(f"Display config: screensaver={'on' if SCREENSAVER['enabled'] else 'off'}"
               f" idle={SCREENSAVER['idle_seconds']}s")
+        apply_rotation(str(config.get("screen_rotation") or "normal"))
     except Exception as e:
         print(f"Could not read display config ({e}); keeping current settings")
 

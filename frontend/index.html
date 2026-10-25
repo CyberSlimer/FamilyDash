@@ -362,6 +362,32 @@
         /* A phone or a portrait panel can't show seven columns legibly, so
            let them wrap there. The inline style above is more specific, so
            this has to override it explicitly. */
+        /* A portrait wall is 1080 wide and 1920 tall: the column count that
+           suits a landscape TV leaves everything squeezed, while vertical
+           space goes begging. Every grid here is widened and shortened. */
+        @media (orientation: portrait) {
+            .two-column {
+                grid-template-columns: 1fr;
+                grid-auto-rows: minmax(0, 1fr);
+            }
+
+            /* .forecast carries an inline column count for the real number of
+               days, so only !important can get past it. */
+            .forecast {
+                grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)) !important;
+            }
+
+            .meal-week {
+                grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            }
+
+            .grocery-columns,
+            .recipe-grid,
+            .pantry-items {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
         @media (max-width: 900px) {
             .forecast[style] {
                 grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)) !important;

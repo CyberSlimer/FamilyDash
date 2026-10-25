@@ -1188,6 +1188,18 @@
                     <label class="form-label">Default seconds per screen</label>
                     <input type="number" class="form-input" id="display-rotation" min="5" max="3600">
                 </div>
+                <div class="form-group">
+                    <label class="form-label">Which way up is the screen</label>
+                    <select class="form-select" id="display-screen-rotation">
+                        <option value="normal">Landscape</option>
+                        <option value="90">Portrait (turned clockwise)</option>
+                        <option value="270">Portrait (turned anti-clockwise)</option>
+                        <option value="180">Landscape (upside down)</option>
+                    </select>
+                    <div class="form-hint">Turns the Pi's own output, so the wall rearranges itself
+                        into one tall column. Give it up to half a minute. If the picture ends up
+                        the wrong way round, the other portrait option turns it the other way.</div>
+                </div>
                 <label class="toggle-label">
                     <input type="checkbox" id="display-24h"> 24-hour clock
                 </label>
@@ -1733,7 +1745,7 @@
                 { id: 3, url: photoSvg('#7ed321', '#2f9e44', 'Soccer game'), caption: 'Soccer game', filename: 'demo-3.svg', width: 1200, height: 800, bytes: 4200, sort_order: 3 },
             ];
             const display = {
-                rotation_interval: 30, clock_24h: false, show_indicators: true,
+                rotation_interval: 30, screen_rotation: 'normal', clock_24h: false, show_indicators: true,
                 theme: { primary: '#667eea', secondary: '#764ba2', text: '#ffffff',
                          accent: '#ffd166', card_opacity: 0.1, scale: 1,
                          font: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" },
@@ -2988,6 +3000,7 @@
             `).join('');
 
             document.getElementById('display-rotation').value = c.rotation_interval;
+            document.getElementById('display-screen-rotation').value = c.screen_rotation || 'normal';
             document.getElementById('display-24h').checked = !!c.clock_24h;
             document.getElementById('display-indicators').checked = c.show_indicators !== false;
             document.getElementById('display-home-focus').checked = c.home_focus !== false;
@@ -3034,6 +3047,7 @@
             const c = displayConfig;
             return {
                 rotation_interval: parseInt(document.getElementById('display-rotation').value, 10) || 30,
+                screen_rotation: document.getElementById('display-screen-rotation').value,
                 clock_24h: document.getElementById('display-24h').checked,
                 show_indicators: document.getElementById('display-indicators').checked,
                 home_focus: document.getElementById('display-home-focus').checked,
