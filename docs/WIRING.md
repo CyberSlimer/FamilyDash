@@ -100,6 +100,45 @@ widen the search.
    - Built-in pull-up resistor keeps GPIO 17 HIGH when not pressed
    - Button press pulls GPIO 17 LOW
 
+### Capacitive touch module instead of a button
+
+A TTP223-style touch pad is a drop-in replacement for the push button and is
+easier to mount behind a panel, since nothing has to move. It takes three
+wires rather than two, because it needs power:
+
+| Module pin | Pi pin |
+|---|---|
+| VCC | 1 (3.3V) |
+| GND | 9 (GND) |
+| OUT (sometimes I/O or SIG) | 11 (GPIO 17) |
+
+Then in `config.env`:
+
+```
+BUTTON_PIN=17
+BUTTON_ACTIVE=high
+```
+
+`BUTTON_ACTIVE=high` is the part that matters and the part that is easy to
+miss. A switch idles **high** and is pressed **low**; a touch pad is the
+other way round, idling **low** and going **high** under a finger. The
+service derives the pull resistor, the interrupt edge and the level that
+counts as a press from this one setting, so with it left at `low` the pad
+either does nothing or registers a press the moment the service starts.
+
+Expected on startup:
+
+```
+Button: GPIO 17 (touch pad, active high)
+```
+
+If instead it says the pin *is not resting low*, the module is either held
+down, wired to 3.3V rather than to the GPIO, or is one of the variants with
+the polarity jumper set the other way.
+
+Power it from 3.3V (pin 1), not 5V. These modules will run from either, but
+at 5V the OUT pin swings to 5V too, and a Pi GPIO is not 5V tolerant.
+
 ### Button Diagram
 
 ```

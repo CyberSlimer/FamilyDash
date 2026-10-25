@@ -48,6 +48,19 @@ def parse_pin(value, default):
 
 
 BUTTON_PIN = parse_pin(os.environ.get("BUTTON_PIN"), 17)  # advances screens
+
+# A mechanical switch shorts its pin to ground, so it idles high and presses
+# low. A capacitive touch module (TTP223 and friends) drives its output
+# instead: it idles low and goes high on touch. Those are opposite in every
+# respect - pull resistor, edge, and the level that means "pressed" - so the
+# whole button path is derived from this one setting rather than assuming a
+# switch. BUTTON_ACTIVE=high in config.env selects the touch module.
+BUTTON_ACTIVE_HIGH = os.environ.get("BUTTON_ACTIVE", "low").strip().lower() in (
+    "high", "rising", "touch", "1")
+BUTTON_PULL = GPIO.PUD_DOWN if BUTTON_ACTIVE_HIGH else GPIO.PUD_UP
+BUTTON_EDGE = GPIO.RISING if BUTTON_ACTIVE_HIGH else GPIO.FALLING
+BUTTON_PRESSED = GPIO.HIGH if BUTTON_ACTIVE_HIGH else GPIO.LOW
+BUTTON_KIND = "touch pad" if BUTTON_ACTIVE_HIGH else "button"
 MOTION_PIN = parse_pin(os.environ.get("MOTION_PIN"), 27)  # PIR motion sensor
 
 # Set once the button has proved it rests high; cleared again if it starts
@@ -79,6 +92,14 @@ MOTION_WARMUP = float(os.environ.get("MOTION_WARMUP", 60))
 # PIR high for an hour, so the threshold has to be far longer than any plausible
 # visit before we stop believing the sensor.
 MOTION_STUCK_SECONDS = float(os.environ.get("MOTION_STUCK_SECONDS", 6 * 3600))
+
+# With the photo screensaver on, the screensaver *is* the idle state and the
+# panel only powers down after a long absence. This used to be four times the
+# idle timeout, which on the default five minutes meant twenty - so a wall with
+# no motion sensor went black twenty minutes after the last phone command, and
+# with nothing able to wake it, stayed black. Four hours is the sort of gap
+# that actually means the house has gone to bed.
+DISPLAY_OFF_AFTER = float(os.environ.get("DISPLAY_OFF_AFTER", 4 * 3600))
 MOTION_READY = False
 MOTION_HIGH_SINCE = None
 STARTED_AT = datetime.now()
@@ -153,25 +174,27 @@ def refresh_config():
 # GPIO SETUP
 # ============================================================================
 
-def button_rests_high():
-    """Sample the button pin over half a second; True if it is idle throughout.
+def button_rests_idle():
+    """Sample the input over half a second; True if it is idle throughout.
 
-    The internal pull-up holds an untouched button HIGH. A pin already sitting
-    LOW means the switch is shorted, wired to ground, or broken closed - and
-    attaching a FALLING-edge callback to it would hand the screens to a fault.
-    Half a second of samples also catches contacts that are breaking up, which
-    a single read would sail straight past.
+    The pull resistor holds an untouched input at its resting level. A pin
+    already sitting at the pressed level means a shorted switch, a touch pad
+    held down, or miswiring - and attaching an edge callback to that hands the
+    screens to a fault. Half a second of samples also catches contacts that
+    are breaking up, which a single read would sail straight past.
     """
-    low = 0
+    active = 0
     for _ in range(10):
-        if GPIO.input(BUTTON_PIN) == GPIO.LOW:
-            low += 1
+        if GPIO.input(BUTTON_PIN) == BUTTON_PRESSED:
+            active += 1
         time.sleep(0.05)
-    if low:
-        print(f"Button: GPIO {BUTTON_PIN} is not resting high ({low} of 10 samples "
-              "low), so it is being ignored - a stuck or chattering switch would "
-              "advance the screens by itself. Set BUTTON_PIN=off in config.env to "
-              "stop looking for it.")
+    if active:
+        resting = "low" if BUTTON_ACTIVE_HIGH else "high"
+        print(f"Button: GPIO {BUTTON_PIN} is not resting {resting} ({active} of 10 "
+              f"samples read as pressed), so the {BUTTON_KIND} is being ignored - "
+              "stuck like that it would advance the screens by itself. Check "
+              "BUTTON_ACTIVE in config.env is the right way round for what is "
+              "fitted, or set BUTTON_PIN=off to stop looking for it.")
         return False
     return True
 
@@ -184,15 +207,17 @@ def setup_gpio():
     GPIO.setwarnings(False)
     print("GPIO initialized")
 
-    # Button with pull-up resistor (button connects to ground)
+    # Pull resistor chosen to hold the input at its resting level, which is
+    # the opposite way round for a touch module than for a switch.
     if BUTTON_PIN is None:
         print("Button: off - the screens rotate on their own and the phone can "
               "drive them from the Display tab")
     else:
-        GPIO.setup(BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_UP)
-        BUTTON_READY = button_rests_high()
+        GPIO.setup(BUTTON_PIN, GPIO.IN, pull_up_down=BUTTON_PULL)
+        BUTTON_READY = button_rests_idle()
         if BUTTON_READY:
-            print(f"Button: GPIO {BUTTON_PIN}")
+            print(f"Button: GPIO {BUTTON_PIN} ({BUTTON_KIND}, active "
+                  f"{'high' if BUTTON_ACTIVE_HIGH else 'low'})")
 
     # PIR motion sensor
     if MOTION_PIN is None:
@@ -238,21 +263,35 @@ _WLR_OUTPUT = None
 
 
 def wlr_output(env):
-    """Name of the first connected output, e.g. HDMI-A-1. Cached."""
+    """Name of the real connected output, e.g. HDMI-A-1.
+
+    wlroots invents a headless output - NOOP-1, "Headless output 2" - to keep
+    itself alive when no physical screen is attached, and lists it exactly
+    like a real one. Taking the first line therefore picks the placeholder the
+    moment the monitor stops answering, and rotating or powering that does
+    nothing whatsoever to the wall. A failed lookup is not cached, so the name
+    is found again once the screen comes back; callers are infrequent enough
+    for that to cost nothing.
+    """
     global _WLR_OUTPUT
-    if _WLR_OUTPUT is None:
-        _WLR_OUTPUT = ''
-        try:
-            result = subprocess.run(['wlr-randr'], env=env, capture_output=True,
-                                    text=True, timeout=10)
-            for line in result.stdout.splitlines():
-                # Output blocks start in column zero; their properties are indented.
-                if line.strip() and not line[0].isspace():
-                    _WLR_OUTPUT = line.split()[0]
-                    break
-        except Exception:
-            pass
-    return _WLR_OUTPUT
+    if _WLR_OUTPUT:
+        return _WLR_OUTPUT
+    found = ''
+    try:
+        result = subprocess.run(['wlr-randr'], env=env, capture_output=True,
+                                text=True, timeout=10)
+        for line in result.stdout.splitlines():
+            # Output blocks start in column zero; their properties are indented.
+            if line.strip() and not line[0].isspace():
+                name = line.split()[0]
+                if name.upper().startswith(('NOOP', 'HEADLESS')):
+                    continue
+                found = name
+                break
+    except Exception:
+        pass
+    _WLR_OUTPUT = found
+    return found
 
 
 def set_display_power(on):
@@ -355,7 +394,7 @@ def button_callback(channel):
 
     # Debounce
     time.sleep(0.2)
-    if GPIO.input(BUTTON_PIN) != GPIO.LOW:  # released again; electrical noise
+    if GPIO.input(BUTTON_PIN) != BUTTON_PRESSED:  # released again; electrical noise
         return
 
     now = time.monotonic()
@@ -444,8 +483,10 @@ def check_motion():
             idle_time = (datetime.now() - LAST_MOTION).total_seconds()
             if SCREENSAVER["enabled"]:
                 # The photo screensaver is the idle state; the monitor only
-                # powers down long after, to save the panel overnight.
-                if idle_time > max(MOTION_TIMEOUT, SCREENSAVER["idle_seconds"]) * 4:
+                # powers down after DISPLAY_OFF_AFTER, to save the panel
+                # overnight rather than in the middle of the afternoon.
+                if idle_time > max(DISPLAY_OFF_AFTER,
+                                   SCREENSAVER["idle_seconds"]):
                     print(f"No motion for {int(idle_time)}s - turning off display")
                     turn_display_off()
             elif idle_time > MOTION_TIMEOUT:
@@ -458,25 +499,35 @@ def check_motion():
 
 def main():
     """Main control loop"""
+    global DISPLAY_ON
     print("Family Dashboard Hardware Controller")
     print("=" * 50)
     print("Starting...")
     
     # Setup GPIO
     setup_gpio()
+
+    # DISPLAY_ON starts True, so without this a service that comes up while the
+    # panel is actually off would believe the screen is fine and never send a
+    # power-on. Restarting the service is the obvious thing to try when the wall
+    # is dark, and it should work.
+    used = set_display_power(True)
+    DISPLAY_ON = True
+    print("Display asserted ON at startup" + (f" (via {used})" if used else
+          " - no mechanism worked, so the monitor may be off at the panel"))
     
     # Setup button interrupt
     if BUTTON_READY:
         GPIO.add_event_detect(
             BUTTON_PIN,
-            GPIO.FALLING,
+            BUTTON_EDGE,
             callback=button_callback,
             bouncetime=300
         )
 
     print("Ready!")
     if BUTTON_READY:
-        print("- Press button to advance screens")
+        print(f"- Use the {BUTTON_KIND} on GPIO {BUTTON_PIN} to advance screens")
     else:
         print("- No working button; advance screens from the phone's Display tab")
     if MOTION_READY:
