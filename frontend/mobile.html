@@ -1415,9 +1415,10 @@
             <form onsubmit="importRecipeText(event)" id="import-paste-form" style="display: none;">
                 <div class="form-group">
                     <div id="import-paste-reason" class="import-note"></div>
-                    <label class="form-label">Paste the recipe</label>
+                    <label class="form-label">Paste the recipe, or a whole chat</label>
                     <textarea class="form-textarea" id="import-text" rows="10" required
-                              placeholder="Ingredients&#10;2 cups flour&#10;1 tsp salt&#10;&#10;Instructions&#10;Mix and bake."></textarea>
+                              placeholder="Paste a recipe, or copy an entire ChatGPT or Claude conversation - the question, the chit-chat and the sign-off are all thrown away."></textarea>
+                    <div class="form-hint">From a recipe page, a text message, or a chat with an assistant. Whatever comes out, you can edit it before saving.</div>
                 </div>
                 <div class="modal-actions">
                     <button type="button" class="btn btn-secondary" onclick="closeModal('import-modal')">Cancel</button>
@@ -1425,7 +1426,7 @@
                 </div>
             </form>
             <button type="button" class="btn btn-secondary btn-small" id="import-paste-toggle"
-                    onclick="showPasteImport()">Paste it instead</button>
+                    onclick="showPasteImport()">Paste a recipe or chat instead</button>
         </div>
     </div>
 

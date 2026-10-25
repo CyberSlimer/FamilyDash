@@ -573,13 +573,17 @@ def import_recipe_text():
 
     The way in for the sites behind bot protection, which no server-side
     fetch can get past. Accepts either the whole page's text or just the
-    ingredient list.
+    ingredient list - or a whole conversation copied out of ChatGPT or
+    Claude, which is picked up automatically so that nobody has to know
+    which kind of paste they are holding.
     """
     data = request.json or {}
     text = data.get('text') or ''
+    parse = (rimport.parse_recipe_chat if rimport.looks_like_chat(text)
+             else rimport.parse_recipe_text)
 
     try:
-        return jsonify(rimport.parse_recipe_text(
+        return jsonify(parse(
             text,
             name=(data.get('name') or '').strip(),
             url=(data.get('source_url') or '').strip(),

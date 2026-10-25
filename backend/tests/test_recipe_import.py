@@ -505,5 +505,129 @@ class PastedTextTests(unittest.TestCase):
         self.assertEqual(set(pasted), set(fetched))
 
 
+
+CHATGPT_PASTE = """You said:
+can you give me a weeknight chicken thing the kids will eat
+
+ChatGPT said:
+Absolutely! Here's a super easy one that's always a hit
+
+**Honey Garlic Chicken Thighs**
+
+Prep time: 10 minutes
+Cook time: 25 minutes
+Serves: 4
+
+These come out sticky and sweet, and they only need one pan.
+
+### Ingredients
+
+- 8 boneless skinless chicken thighs
+- 1/3 cup honey
+- 3 tbsp soy sauce
+- Salt and pepper
+
+### Instructions
+
+1. Pat the chicken dry and season both sides.
+2. Sear the thighs about 5 minutes per side.
+3. Pour the sauce over and simmer until it thickens.
+
+**Tips**
+- Swap the thighs for drumsticks.
+
+Let me know if you want a sheet-pan version!
+"""
+
+
+class ChatTranscriptTests(unittest.TestCase):
+    """A recipe copied out of an assistant is a conversation, not a page."""
+
+    def test_a_chatgpt_paste_comes_out_standardised(self):
+        out = ri.parse_recipe_chat(CHATGPT_PASTE)
+        self.assertEqual(out['name'], 'Honey Garlic Chicken Thighs')
+        self.assertEqual(out['prep_time'], 10)
+        self.assertEqual(out['cook_time'], 25)
+        self.assertEqual(out['servings'], 4)
+        self.assertEqual(out['source'], 'chat')
+        self.assertIn('sticky and sweet', out['description'])
+
+    def test_the_question_that_was_asked_is_not_a_step(self):
+        out = ri.parse_recipe_chat(CHATGPT_PASTE)
+        self.assertNotIn('kids will eat', out['instructions'])
+        self.assertNotIn('You said', out['name'])
+        self.assertNotIn('You said', out['instructions'])
+
+    def test_sign_offs_and_tips_are_dropped(self):
+        out = ri.parse_recipe_chat(CHATGPT_PASTE)
+        self.assertNotIn('sheet-pan version', out['instructions'])
+        self.assertNotIn('drumsticks', out['instructions'])
+        self.assertNotIn('Absolutely', out['instructions'])
+
+    def test_markdown_is_flattened_off_the_ingredients(self):
+        out = ri.parse_recipe_chat(CHATGPT_PASTE)
+        self.assertEqual(out['ingredients'][0], '8 boneless skinless chicken thighs')
+        for line in out['ingredients']:
+            self.assertFalse(line.startswith('-'), line)
+            self.assertNotIn('**', line)
+
+    def test_numbered_steps_survive_bullet_stripping(self):
+        # "1. Pat the chicken dry" must not lose its text to the bullet regex.
+        out = ri.parse_recipe_chat(CHATGPT_PASTE)
+        self.assertIn('Pat the chicken dry', out['instructions'])
+        self.assertIn('simmer until it thickens', out['instructions'])
+
+    def test_a_chat_with_no_headings_still_parses(self):
+        out = ri.parse_recipe_chat(
+            "Claude said:\n"
+            "**Cinnamon Toast**\n"
+            "2 slices bread\n"
+            "1 tbsp butter\n"
+            "Toast the bread, then butter it.\n")
+        self.assertEqual(out['name'], 'Cinnamon Toast')
+        self.assertIn('2 slices bread', out['ingredients'])
+        self.assertIn('Toast the bread', out['instructions'])
+
+    def test_total_time_is_used_when_prep_and_cook_are_absent(self):
+        out = ri.parse_recipe_chat(
+            "**Toast**\nTotal time: 1 hr 5 mins\nIngredients\n2 slices bread\n"
+            "Instructions\nToast it.\n")
+        self.assertEqual(out['cook_time'], 65)
+
+    def test_an_empty_or_recipeless_chat_is_refused(self):
+        for value in ('', '   ', 'You said:\nhello\n'):
+            with self.assertRaises(ri.ImportFailed):
+                ri.parse_recipe_chat(value)
+
+
+class ChatDetectionTests(unittest.TestCase):
+    """Guessing wrong sends an ordinary paste down the chattier path."""
+
+    def test_assistant_pastes_are_detected(self):
+        self.assertTrue(ri.looks_like_chat(CHATGPT_PASTE))
+        self.assertTrue(ri.looks_like_chat('## Ingredients\n1 egg\n'))
+        self.assertTrue(ri.looks_like_chat('**Pancakes**\n1 egg\n'))
+
+    def test_an_ordinary_recipe_paste_is_not_mistaken_for_a_chat(self):
+        self.assertFalse(ri.looks_like_chat(
+            'Quick Pancakes\nIngredients\n- 1 cup flour\n- 1 egg\n'
+            'Instructions\nMix and fry.\n'))
+        self.assertFalse(ri.looks_like_chat(''))
+        self.assertFalse(ri.looks_like_chat('1 egg\n2 cups flour\n'))
+
+
+class StripMarkdownTests(unittest.TestCase):
+    def test_inline_markup_is_removed(self):
+        self.assertEqual(ri.strip_markdown('### Ingredients'), 'Ingredients')
+        self.assertEqual(ri.strip_markdown('- 1 cup flour'), '1 cup flour')
+        self.assertEqual(ri.strip_markdown('**Bold Title**'), 'Bold Title')
+        self.assertEqual(ri.strip_markdown('a [link](http://x) here'), 'a link here')
+        self.assertEqual(ri.strip_markdown('`code`'), 'code')
+        self.assertEqual(ri.strip_markdown('---'), '')
+
+    def test_a_numbered_step_keeps_its_number_for_the_step_parser(self):
+        self.assertEqual(ri.strip_markdown('1. Pat the chicken dry'),
+                         '1. Pat the chicken dry')
+
 if __name__ == '__main__':
     unittest.main()

@@ -535,8 +535,171 @@ def _looks_like_ingredient(line):
     if qty is not None and rest.strip():
         return True
     # Unit-less staples still read as ingredients when they are short and
-    # have no sentence punctuation: "Salt and pepper", "Olive oil".
-    return len(line) <= 40 and not re.search(r'[.!?]\s', line)
+    # have no sentence punctuation: "Salt and pepper", "Olive oil". A closing
+    # full stop counts even at the end of the line - "Toast the bread." is a
+    # step, and ingredients are not written as sentences. Anything with a
+    # quantity has already returned above, so "1 lb. beef" is unaffected.
+    return len(line) <= 40 and not re.search(r'[.!?](\s|$)', line)
+
+
+# ============================================================================
+# CHAT TRANSCRIPTS
+# ============================================================================
+#
+# A recipe pasted out of ChatGPT or Claude is a conversation, not a recipe
+# page: it opens with the question that was asked, wraps the good part in
+# markdown, and signs off offering to make a sheet-pan version. Fed straight
+# to parse_recipe_text it titles the recipe "You said:" and files the question
+# as step one. So the conversation is peeled away first and the markdown
+# flattened, and then the ordinary text parser does the real work - it already
+# knows how to read Ingredients and Instructions headings.
+
+# How the assistants label a turn when a conversation is copied out of them.
+_USER_TURN = re.compile(r'^\s*(?:you said|you|user|me|prompt|q)\s*:\s*$', re.I)
+_ASSISTANT_TURN = re.compile(
+    r'^\s*(?:chatgpt(?: said)?|claude(?: said)?|gemini(?: said)?|copilot(?: said)?'
+    r'|assistant|answer|a)\s*:?\s*$', re.I)
+
+# Sign-offs and lead-ins. These bracket the recipe and are never part of it.
+_CHATTER = re.compile(
+    "^\\s*(?:"
+    "let me know|would you like|want me to|do you want|hope (?:you|this|that)|"
+    "enjoy\\b|anything else|happy (?:cooking|baking)|"
+    "here(?:'|’)?s (?:a|the|another|my)|"
+    "absolutely|sure[,!]|of course|great (?:choice|question)|"
+    "i(?:'|’)?d suggest|i suggest|try this"
+    ")", re.I)
+
+# "Prep time: 10 minutes", "Serves: 4", "Yield - 12 cookies".
+_META_LINE = re.compile(
+    r'^\s*(prep(?:aration)?(?:\s*time)?|cook(?:ing)?(?:\s*time)?|bake(?:\s*time)?'
+    r'|total(?:\s*time)?|serves|servings?|yield|makes)'
+    r'\s*[:\-–]\s*(.+?)\s*$', re.I)
+
+_BOLD_ONLY = re.compile(r'^\s*(?:\*\*|__)(.+?)(?:\*\*|__)\s*:?\s*$')
+_HORIZONTAL_RULE = re.compile(r'^\s*(?:[-*_]\s*){3,}$')
+
+
+def strip_markdown(line):
+    """Flatten one line of markdown to the plain text underneath it."""
+    line = _HORIZONTAL_RULE.sub('', line)
+    line = re.sub(r'^\s{0,3}#{1,6}\s*', '', line)                 # ### Ingredients
+    line = re.sub(r'^\s*>\s?', '', line)                          # > quote
+    # Bullets, but never a numbered step: _STEP_NUMBER_RE deals with those
+    # later, and "1. Pat the chicken dry" has to keep reading as a step.
+    line = re.sub(r'^\s*[-*•●▪]\s+', '', line)
+    line = re.sub(r'\[([^\]]*)\]\([^)]*\)', r'\1', line)          # [text](url)
+    line = re.sub(r'(\*\*|__)(.+?)\1', r'\2', line)               # **bold**
+    line = re.sub(r'(?<![\w*])\*(?!\s)([^*]+?)(?<!\s)\*(?![\w*])', r'\1', line)
+    line = line.replace('`', '')
+    return line.strip()
+
+
+# Signals that essentially never survive a copy from a recipe web page, but
+# are always there in an assistant's answer. Bullet characters deliberately do
+# not count: plain pastes are full of them, and guessing wrong here sends a
+# perfectly ordinary recipe down the chattier code path.
+_CHAT_SIGNALS = (
+    _USER_TURN,
+    _ASSISTANT_TURN,
+    re.compile(r'^\s{0,3}#{1,6}\s+\S'),   # ## Ingredients
+    _BOLD_ONLY,                           # **Honey Garlic Chicken**
+)
+
+
+def looks_like_chat(text):
+    """Whether pasted text came out of a chat rather than off a recipe page."""
+    for line in (text or '').splitlines():
+        if line.strip() and any(sig.match(line) for sig in _CHAT_SIGNALS):
+            return True
+    return False
+
+
+def parse_recipe_chat(text, name='', url=''):
+    """
+    Pull a recipe out of a pasted chat transcript.
+
+    Returns the same shape as parse_recipe_text, with prep/cook/servings
+    filled in when the assistant stated them - which it usually does, and
+    which a recipe page almost never makes this easy to read.
+    """
+    if not (text or '').strip():
+        raise ImportFailed('Nothing to import - paste the conversation first.')
+
+    kept, blurb, meta = [], [], {}
+    title = name
+    in_user_turn = False
+    seen_heading = False
+
+    for raw in (text or '').splitlines():
+        if _USER_TURN.match(raw):
+            in_user_turn = True
+            continue
+        if _ASSISTANT_TURN.match(raw):
+            in_user_turn = False
+            continue
+        if in_user_turn:
+            continue  # the question that was asked is not part of the answer
+
+        bold_heading = _BOLD_ONLY.match(raw)
+        line = strip_markdown(raw)
+        if not line:
+            continue
+
+        found = _META_LINE.match(line)
+        if found:
+            meta.setdefault(found.group(1).lower().split()[0], found.group(2))
+            continue
+
+        is_section = bool(_INGREDIENT_HEADING.match(line)
+                          or _INSTRUCTION_HEADING.match(line)
+                          or _is_noise_heading(line))
+        if is_section:
+            seen_heading = True
+
+        # Chatter is only dropped around the recipe. Once a section heading has
+        # been seen, a line opening "Sure" is far likelier to be a step than a
+        # greeting, and dropping a step is the worse failure.
+        if not seen_heading and not is_section and _CHATTER.match(line):
+            continue
+
+        # The assistant almost always puts the dish name on a bold line of its
+        # own, which beats the first thing it happens to say.
+        if not title and bold_heading and not is_section:
+            title = line
+            continue
+
+        # Prose between the dish name and the first heading is the assistant
+        # describing the food ("these come out sticky and sweet"). Left in, it
+        # becomes step one. It is only safe to divert once a heading proves
+        # the recipe proper starts further down.
+        (kept if seen_heading else blurb).append(line)
+
+    # With no headings anywhere, the blurb is all there is, so it has to be
+    # parsed rather than thrown away.
+    description = ''
+    if not kept:
+        kept, blurb = blurb, []
+    elif blurb:
+        description = ' '.join(blurb)[:500]
+
+    if not kept:
+        raise ImportFailed('That looks like a conversation, but there is no recipe in it.')
+
+    recipe = parse_recipe_text('\n'.join(kept), name=title, url=url)
+    recipe['description'] = description
+
+    recipe['prep_time'] = parse_duration(meta.get('prep'))
+    recipe['cook_time'] = parse_duration(meta.get('cook') or meta.get('bake'))
+    # A lone "Total time" is still worth keeping rather than discarding.
+    if recipe['cook_time'] is None and recipe['prep_time'] is None:
+        recipe['cook_time'] = parse_duration(meta.get('total'))
+    for key in ('serves', 'servings', 'serving', 'yield', 'makes'):
+        if key in meta:
+            recipe['servings'] = first_int(meta[key])
+            break
+    recipe['source'] = 'chat'
+    return recipe
 
 
 def parse_recipe_text(text, name='', url=''):
