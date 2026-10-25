@@ -443,7 +443,11 @@ def main():
     else:
         print("- No working button; advance screens from the phone's Display tab")
     if MOTION_READY:
-        print("- Motion sensor will wake display")
+        # An idle PIR and a pin with nothing on it both read low, so this
+        # cannot claim a sensor is actually fitted - only that one would work.
+        print(f"- Watching GPIO {MOTION_PIN}: motion there wakes the display")
+        print("  With no sensor wired it never fires, and the screensaver is")
+        print("  cleared from the phone's Photos tab instead")
     else:
         print("- No motion sensor; the screensaver clears from the phone's Photos tab")
     print("- Display settings are read from the app every "
