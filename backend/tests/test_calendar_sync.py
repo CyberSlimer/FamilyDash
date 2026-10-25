@@ -29,6 +29,34 @@ class _QuietHandler(http.server.SimpleHTTPRequestHandler):
         pass
 
 
+class ErrorExplanationTests(unittest.TestCase):
+    """A sync error is read on a phone, so it has to name the next step."""
+
+    def explain(self, message, url):
+        return calendar_sync.explain_calendar_error(Exception(message), {'url': url})
+
+    def test_icloud_auth_failure_names_app_specific_passwords(self):
+        text = self.explain("AuthorizationError at 'https://caldav.icloud.com', reason Unauthorized",
+                            'https://caldav.icloud.com')
+        self.assertIn('app-specific password', text)
+        self.assertIn('account.apple.com', text)
+        self.assertIn('Unauthorized', text)  # the original is kept, not replaced
+
+    def test_other_servers_get_the_generic_credential_hint(self):
+        text = self.explain('401 Client Error: Unauthorized', 'https://nextcloud.example.com')
+        self.assertNotIn('account.apple.com', text)
+        self.assertIn('check the username and password', text)
+
+    def test_missing_feed_points_at_the_url(self):
+        self.assertIn('no longer published',
+                      self.explain('404 Client Error: Not Found for url: https://x/y.ics',
+                                   'https://x/y.ics'))
+
+    def test_an_unrecognised_error_is_passed_through_untouched(self):
+        self.assertEqual(self.explain('something odd happened', 'https://x'),
+                         'something odd happened')
+
+
 class WebcalRewriteTests(unittest.TestCase):
     """webcal:// is the only form iCloud gives out for a shared calendar."""
 

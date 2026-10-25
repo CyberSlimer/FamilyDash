@@ -1165,6 +1165,13 @@ def _validate_calendar_payload(data, existing=None):
     if not re.match(r'^(https?|webcal)://', entry['url'], re.I):
         return None, 'URL must start with http://, https:// or webcal://'
 
+    # Pasting a credential on a phone drags in a trailing space or newline more
+    # often than not, and the only symptom is an opaque "Unauthorized". No
+    # calendar server has a credential that deliberately ends in whitespace.
+    for key in ('username', 'password'):
+        if key in entry and isinstance(entry[key], str):
+            entry[key] = entry[key].strip()
+
     # Blank password in an edit means "keep the existing one"
     if not entry.get('password') and existing and existing.get('password'):
         entry['password'] = existing['password']

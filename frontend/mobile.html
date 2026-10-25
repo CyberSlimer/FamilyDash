@@ -499,6 +499,9 @@
             margin-top: 6px;
         }
 
+        .form-hint.hint-warn { color: #b25000; }
+        .form-hint.hint-ok { color: #1f9d55; }
+
         .toggle-label {
             display: flex;
             align-items: center;
@@ -1597,7 +1600,8 @@
                     </div>
                     <div class="form-group">
                         <label class="form-label">Password</label>
-                        <input type="password" class="form-input" id="calendar-password" autocomplete="new-password">
+                        <input type="password" class="form-input" id="calendar-password" autocomplete="new-password"
+                               oninput="checkApplePasswordShape()">
                         <div class="form-hint" id="calendar-password-hint"></div>
                     </div>
                     <div class="form-group" id="calendar-subcalendars-group">
@@ -4167,6 +4171,34 @@
             if (!isCaldav && url.value === 'https://caldav.icloud.com') url.value = '';
         }
 
+        // Apple's app-specific passwords are always four groups of four. Anything
+        // else sent to an iCloud server is almost always the Apple ID password,
+        // which iCloud refuses with a bare "Unauthorized" that explains nothing.
+        // Cheaper to say so while they are still looking at the field.
+        const APPLE_APP_PASSWORD = /^[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}$/i;
+
+        function checkApplePasswordShape() {
+            const hint = document.getElementById('calendar-password-hint');
+            const value = document.getElementById('calendar-password').value.trim();
+            const url = document.getElementById('calendar-url').value.toLowerCase();
+            hint.classList.remove('hint-warn', 'hint-ok');
+            // Only iCloud has this rule; Nextcloud and Fastmail take any password.
+            if (!value || !url.includes('icloud')) {
+                hint.textContent = hint.dataset.default || '';
+                return;
+            }
+            if (APPLE_APP_PASSWORD.test(value)) {
+                hint.textContent = 'Looks like an app-specific password.';
+                hint.classList.add('hint-ok');
+            } else {
+                hint.innerHTML = 'That is not the shape of an app-specific password ' +
+                    '(<code>xxxx-xxxx-xxxx-xxxx</code>). iCloud rejects Apple ID passwords here. ' +
+                    'Make one at <a href="https://account.apple.com" target="_blank" rel="noopener">account.apple.com</a> ' +
+                    '&rarr; Sign-In and Security &rarr; App-Specific Passwords.';
+                hint.classList.add('hint-warn');
+            }
+        }
+
         function renderSubcalendarPicker(available, selected) {
             const picker = document.getElementById('calendar-subcalendars-picker');
             const text = document.getElementById('calendar-subcalendars');
@@ -4208,6 +4240,10 @@
             document.getElementById('calendar-password-hint').textContent = cal && cal.has_password
                 ? (cal.password_ref ? `Currently using ${cal.password_ref} from config.env — leave blank to keep` : 'Saved — leave blank to keep the current password')
                 : 'iCloud: an app-specific password from account.apple.com, not your Apple ID password';
+            // checkApplePasswordShape puts this back when the field is cleared.
+            const pwHint = document.getElementById('calendar-password-hint');
+            pwHint.dataset.default = pwHint.textContent;
+            pwHint.classList.remove('hint-warn', 'hint-ok');
             document.getElementById('calendar-subcalendars').value = cal && cal.calendars ? cal.calendars.join(', ') : '';
             renderSubcalendarPicker(null, null);
             document.getElementById('calendar-enabled').checked = cal ? cal.enabled !== false : true;

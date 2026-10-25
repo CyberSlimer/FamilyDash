@@ -170,6 +170,26 @@ class CalendarApiTests(unittest.TestCase):
         self.assertEqual(listed['password_ref'], '${ICLOUD_APP_PASSWORD}')
         self.assertNotIn('password', listed)
 
+    def test_pasted_credentials_are_stripped(self):
+        # Copying an app-specific password on a phone routinely picks up a
+        # trailing space or newline, and the only symptom is "Unauthorized".
+        res = self.client.post('/api/calendar/calendars', json={
+            'name': 'iCloud', 'type': 'caldav', 'url': 'https://caldav.icloud.com',
+            'username': '  someone@icloud.com\n', 'password': ' abcd-efgh-ijkl-mnop \n'})
+        self.assertEqual(res.status_code, 201, res.get_json())
+        stored = self.stored()[0]
+        self.assertEqual(stored['username'], 'someone@icloud.com')
+        self.assertEqual(stored['password'], 'abcd-efgh-ijkl-mnop')
+
+    def test_whitespace_only_password_does_not_count_as_a_password(self):
+        # It must be treated as "left blank", not stored as a space that would
+        # then be merged in on every later edit.
+        res = self.client.post('/api/calendar/calendars', json={
+            'name': 'Feed', 'type': 'ics', 'url': self.feed_url, 'password': '   '})
+        self.assertEqual(res.status_code, 201, res.get_json())
+        self.assertNotIn('password', self.stored()[0])
+        self.assertFalse(res.get_json()['has_password'])
+
     def test_list_includes_sync_status(self):
         self.client.post('/api/calendar/calendars', json={'name': 'Feed', 'type': 'ics', 'url': self.feed_url})
         self.client.post('/api/calendar/calendars', json={'name': 'Broken', 'type': 'ics', 'url': self.missing_url})

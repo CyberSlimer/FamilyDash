@@ -336,6 +336,33 @@ def list_caldav_calendars(cal_cfg):
     return names
 
 
+def explain_calendar_error(error, cal_cfg):
+    """
+    Turn a library exception into something that names the next step.
+
+    caldav reports a rejected iCloud login as "AuthorizationError ...
+    Unauthorized", which is true and useless: the overwhelmingly common cause
+    is an Apple ID password where an app-specific one is required, and nothing
+    in the message says so.
+    """
+    text = str(error)
+    lowered = text.lower()
+    url = str(cal_cfg.get('url', '')).lower()
+
+    if 'unauthorized' in lowered or 'authorizationerror' in lowered or '401' in lowered:
+        if 'icloud' in url:
+            return (text + " - iCloud will not accept an Apple ID password here. "
+                    "Generate an app-specific password (the xxxx-xxxx-xxxx-xxxx kind) "
+                    "at account.apple.com > Sign-In and Security > App-Specific "
+                    "Passwords, and make sure the username is your full Apple ID.")
+        return text + " - check the username and password."
+    if '404' in lowered or 'not found' in lowered:
+        return text + " - the feed URL is wrong, or the calendar is no longer published."
+    if 'name or service not known' in lowered or 'nameresolution' in lowered:
+        return text + " - that host does not resolve; check the address for a typo."
+    return text
+
+
 def test_calendar(cal_cfg, tz=None, days=7, sample_size=5):
     """
     Fetch one calendar right now and report what happened. Used by the
@@ -370,7 +397,7 @@ def test_calendar(cal_cfg, tz=None, days=7, sample_size=5):
             except Exception as exc:
                 log.debug("could not list CalDAV calendars: %s", exc)
     except Exception as exc:
-        result['error'] = str(exc)
+        result['error'] = explain_calendar_error(exc, cal_cfg)
     return result
 
 
@@ -471,7 +498,7 @@ class CalendarSync:
                     all_events.extend(events)
                     log.info("[%s] %d events", cal_cfg['name'], len(events))
                 except Exception as exc:
-                    entry['error'] = str(exc)
+                    entry['error'] = explain_calendar_error(exc, cal_cfg)
                     log.warning("[%s] fetch failed: %s", cal_cfg['name'], exc)
             status[cal_cfg['id']] = entry
 
