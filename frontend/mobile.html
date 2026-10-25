@@ -499,6 +499,43 @@
             margin-top: 6px;
         }
 
+        /* Recipe pictures: a thumbnail in the list, a larger preview in the
+           add form. object-fit keeps a portrait phone photo from stretching. */
+        .recipe-thumb {
+            width: 54px;
+            height: 54px;
+            border-radius: 10px;
+            object-fit: cover;
+            flex-shrink: 0;
+            background: #e9e9ec;
+        }
+
+        .recipe-thumb-wrap { position: relative; flex-shrink: 0; }
+
+        .recipe-thumb-wrap .thumb-remove {
+            position: absolute;
+            top: -6px;
+            right: -6px;
+            width: 22px;
+            height: 22px;
+            border: none;
+            border-radius: 50%;
+            background: #d0342c;
+            color: #fff;
+            font-size: 0.7em;
+            line-height: 1;
+            cursor: pointer;
+        }
+
+        .recipe-photo-preview {
+            width: 100%;
+            max-height: 220px;
+            object-fit: cover;
+            border-radius: 12px;
+            display: block;
+            margin-bottom: 8px;
+        }
+
         .form-hint.hint-warn { color: #b25000; }
         .form-hint.hint-ok { color: #1f9d55; }
 
@@ -1356,6 +1393,61 @@
     <!-- Floating Action Button -->
     <button class="fab" id="add-fab" onclick="showAddModal()">+</button>
 
+    <!-- One hidden picker, reused by every recipe row. A file input per row
+         would be dozens of them for no gain. -->
+    <input type="file" id="recipe-photo-upload" accept="image/*" style="display: none;">
+
+    <!-- Recipe Detail -->
+    <div id="recipe-view-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header" id="recipe-view-title">Recipe</div>
+            <div id="recipe-view-body"></div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeModal('recipe-view-modal')">Close</button>
+                <button type="button" class="btn btn-secondary" id="recipe-view-photo">📷 Picture</button>
+                <button type="button" class="btn btn-primary" id="recipe-view-plan">Plan a day</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Plan a Meal -->
+    <div id="meal-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">Plan a Meal</div>
+            <form id="meal-form" onsubmit="saveMeal(event)">
+                <input type="hidden" id="meal-id">
+                <div class="form-group">
+                    <label class="form-label">Day*</label>
+                    <input type="date" class="form-input" id="meal-date" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Meal</label>
+                    <select class="form-select" id="meal-type">
+                        <option value="breakfast">Breakfast</option>
+                        <option value="lunch">Lunch</option>
+                        <option value="dinner" selected>Dinner</option>
+                        <option value="snack">Snack</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Recipe</label>
+                    <select class="form-select" id="meal-recipe" onchange="updateMealCustomField()">
+                        <option value="">Something else (type it below)</option>
+                    </select>
+                </div>
+                <div class="form-group" id="meal-custom-group">
+                    <label class="form-label">What are you having?</label>
+                    <input type="text" class="form-input" id="meal-custom" placeholder="e.g., Pizza night, Leftovers">
+                    <div class="form-hint">Only needed when no recipe is chosen.</div>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('meal-modal')">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- Add/Edit Recipe Modal -->
     <div id="recipe-modal" class="modal">
         <div class="modal-content">
@@ -1368,6 +1460,19 @@
                 <div class="form-group">
                     <label class="form-label">Description</label>
                     <textarea class="form-textarea" id="recipe-description"></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Picture</label>
+                    <img id="recipe-photo-preview" class="recipe-photo-preview" alt="" style="display: none;">
+                    <input type="file" id="recipe-photo-file" accept="image/*"
+                           style="display: none;" onchange="previewRecipePhoto()">
+                    <div class="quick-picks">
+                        <button type="button" class="chip"
+                                onclick="document.getElementById('recipe-photo-file').click()">📷 Choose a photo</button>
+                        <button type="button" class="chip" id="recipe-photo-clear"
+                                style="display: none;" onclick="clearRecipePhoto()">Remove</button>
+                    </div>
+                    <div class="form-hint" id="recipe-photo-hint">Optional. It is uploaded once the recipe is saved.</div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Ingredients</label>
@@ -2460,7 +2565,7 @@
 
         // Tabs with no case in showAddModal(): the button would do nothing and
         // on Display it sits on top of the settings.
-        const TABS_WITHOUT_ADD = ['meals', 'display', 'photos'];
+        const TABS_WITHOUT_ADD = ['display', 'photos'];
 
         function switchTab(tabName) {
             currentTab = tabName;
@@ -2528,8 +2633,15 @@
                     <ul class="item-list">
                         ${recipes.map(recipe => `
                             <li class="item">
+                                ${recipe.image_url ? `
+                                    <div class="recipe-thumb-wrap">
+                                        <img class="recipe-thumb" src="${esc(recipe.image_url)}" alt="" loading="lazy">
+                                        <button class="thumb-remove" title="Remove picture"
+                                                onclick="removeRecipePhoto(${recipe.id})">✕</button>
+                                    </div>` : ''}
                                 <div class="item-content">
-                                    <div class="item-title">${recipe.name}</div>
+                                    <div class="item-title" style="cursor:pointer"
+                                         onclick="showRecipe(${recipe.id})">${esc(recipe.name)}</div>
                                     <div class="item-meta">
                                         ${recipe.prep_time ? `⏱️ ${recipe.prep_time + (recipe.cook_time || 0)} min` : ''}
                                         ${recipe.servings ? `👥 ${recipe.servings}` : ''}
@@ -2538,6 +2650,8 @@
                                     ${recipe.tags.length > 0 ? `<div>${recipe.tags.map(tag => `<span class="tag">${tag}</span>`).join('')}</div>` : ''}
                                 </div>
                                 <div class="item-actions">
+                                    <button class="btn btn-secondary btn-icon" title="${recipe.image_url ? 'Change picture' : 'Add a picture'}"
+                                            onclick="pickRecipePhoto(${recipe.id})">📷</button>
                                     <button class="btn btn-secondary btn-icon" onclick="toggleFavorite(${recipe.id}, ${recipe.favorite})">${recipe.favorite ? '⭐' : '☆'}</button>
                                     <button class="btn btn-danger btn-icon" onclick="deleteRecipe(${recipe.id})">🗑️</button>
                                 </div>
@@ -2547,6 +2661,109 @@
                 `;
             } catch (error) {
                 console.error('Error loading recipes:', error);
+            }
+        }
+
+        // A photo chosen while adding a recipe. Uploading it needs an id, which
+        // only exists once the recipe is saved, so the File waits here.
+        let pendingRecipePhoto = null;
+        let openRecipeId = null;
+
+        function previewRecipePhoto() {
+            const file = (document.getElementById('recipe-photo-file').files || [])[0];
+            pendingRecipePhoto = file || null;
+            const img = document.getElementById('recipe-photo-preview');
+            const clear = document.getElementById('recipe-photo-clear');
+            if (!file) {
+                img.removeAttribute('src');
+                img.style.display = 'none';
+                clear.style.display = 'none';
+                return;
+            }
+            img.src = URL.createObjectURL(file);
+            img.style.display = '';
+            clear.style.display = '';
+        }
+
+        function clearRecipePhoto() {
+            pendingRecipePhoto = null;
+            document.getElementById('recipe-photo-file').value = '';
+            previewRecipePhoto();
+        }
+
+        async function uploadRecipePhoto(recipeId, file) {
+            const body = new FormData();
+            body.append('file', file);
+            const res = await fetch(`${API_BASE}/recipes/${recipeId}/image`, { method: 'POST', body });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || 'Could not save that picture');
+            return data;
+        }
+
+        // Opens the shared picker and wires it to one recipe for this one use.
+        function pickRecipePhoto(recipeId) {
+            const input = document.getElementById('recipe-photo-upload');
+            input.onchange = async () => {
+                const file = (input.files || [])[0];
+                input.value = '';            // so the same file can be picked again
+                if (!file) return;
+                try {
+                    await uploadRecipePhoto(recipeId, file);
+                    await loadRecipes();
+                    if (openRecipeId === recipeId) showRecipe(recipeId);
+                } catch (err) {
+                    alert(err.message);
+                }
+            };
+            input.click();
+        }
+
+        async function removeRecipePhoto(recipeId) {
+            if (!confirm('Remove the picture from this recipe?')) return;
+            await fetch(`${API_BASE}/recipes/${recipeId}/image`, { method: 'DELETE' });
+            await loadRecipes();
+            if (openRecipeId === recipeId) showRecipe(recipeId);
+        }
+
+        async function showRecipe(id) {
+            openRecipeId = id;
+            const body = document.getElementById('recipe-view-body');
+            body.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+            openModal('recipe-view-modal');
+            document.getElementById('recipe-view-photo').onclick = () => pickRecipePhoto(id);
+            document.getElementById('recipe-view-plan').onclick = () => {
+                closeModal('recipe-view-modal');
+                openMealModal({ recipeId: id });
+            };
+            try {
+                const recipe = await (await fetch(`${API_BASE}/recipes/${id}`)).json();
+                document.getElementById('recipe-view-title').textContent = recipe.name || 'Recipe';
+                const minutes = (recipe.prep_time || 0) + (recipe.cook_time || 0);
+                const steps = String(recipe.instructions || '')
+                    .split(/\n\s*\n|\n/).map(line => line.trim()).filter(Boolean);
+                body.innerHTML = `
+                    ${recipe.image_url ? `<img class="recipe-photo-preview" src="${esc(recipe.image_url)}" alt="">` : ''}
+                    ${recipe.description ? `<p class="modal-intro">${esc(recipe.description)}</p>` : ''}
+                    <div class="item-meta">
+                        ${minutes ? `⏱️ ${minutes} min` : ''}
+                        ${recipe.servings ? ` · 👥 ${recipe.servings}` : ''}
+                        ${recipe.tags && recipe.tags.length
+                            ? ` · ${recipe.tags.map(t => `<span class="tag">${esc(t)}</span>`).join(' ')}` : ''}
+                    </div>
+                    <h3 class="card-title" style="margin-top:16px">Ingredients</h3>
+                    ${(recipe.ingredients || []).length
+                        ? `<ul class="help-list">${recipe.ingredients.map(i => `<li>${esc(i)}</li>`).join('')}</ul>`
+                        : '<p class="form-hint">None listed.</p>'}
+                    <h3 class="card-title" style="margin-top:16px">Instructions</h3>
+                    ${steps.length
+                        ? `<ol class="help-list">${steps.map(line =>
+                              `<li>${esc(line.replace(/^\s*\d+[.)]\s*/, ''))}</li>`).join('')}</ol>`
+                        : '<p class="form-hint">None written down.</p>'}
+                    ${recipe.source_url
+                        ? `<p class="form-hint"><a href="${esc(recipe.source_url)}" target="_blank" rel="noopener">Original page</a></p>` : ''}
+                `;
+            } catch (err) {
+                body.innerHTML = '<p class="form-hint">Could not load that recipe.</p>';
             }
         }
 
@@ -2578,11 +2795,24 @@
             };
             
             try {
-                await fetch(`${API_BASE}/recipes`, {
+                const res = await fetch(`${API_BASE}/recipes`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(data)
                 });
+                const created = await res.json().catch(() => ({}));
+
+                // The picture needs the id the save just produced. A failure
+                // here must not read as the recipe being lost, because it is
+                // not - it is saved, just without the photo.
+                if (pendingRecipePhoto && created.id) {
+                    try {
+                        await uploadRecipePhoto(created.id, pendingRecipePhoto);
+                    } catch (err) {
+                        alert(`Recipe saved, but the picture did not: ${err.message}`);
+                    }
+                }
+                clearRecipePhoto();
                 
                 closeModal('recipe-modal');
                 loadRecipes();
@@ -3930,6 +4160,79 @@
         // MEALS
         // =============================================
 
+        function updateMealCustomField() {
+            const chosen = document.getElementById('meal-recipe').value;
+            document.getElementById('meal-custom-group').style.display = chosen ? 'none' : '';
+        }
+
+        async function openMealModal({ recipeId = '', date = '' } = {}) {
+            document.getElementById('meal-form').reset();
+            document.getElementById('meal-id').value = '';
+            // en-CA formats as YYYY-MM-DD, and in local time - toISOString
+            // would roll over to tomorrow for anyone west of Greenwich.
+            document.getElementById('meal-date').value = date || new Date().toLocaleDateString('en-CA');
+            document.getElementById('meal-type').value = 'dinner';
+
+            const select = document.getElementById('meal-recipe');
+            select.innerHTML = '<option value="">Something else (type it below)</option>';
+            try {
+                const recipes = await (await fetch(`${API_BASE}/recipes`)).json();
+                for (const recipe of recipes) {
+                    const option = document.createElement('option');
+                    option.value = recipe.id;
+                    option.textContent = recipe.name;
+                    select.appendChild(option);
+                }
+            } catch (err) {
+                console.error('Could not list recipes for the meal picker:', err);
+            }
+            select.value = recipeId ? String(recipeId) : '';
+            updateMealCustomField();
+            openModal('meal-modal');
+        }
+
+        async function saveMeal(event) {
+            event.preventDefault();
+            const recipeId = document.getElementById('meal-recipe').value;
+            const custom = document.getElementById('meal-custom').value.trim();
+            if (!recipeId && !custom) {
+                alert('Pick a recipe, or type what you are having.');
+                return;
+            }
+            const payload = {
+                date: document.getElementById('meal-date').value,
+                meal_type: document.getElementById('meal-type').value,
+                recipe_id: recipeId ? parseInt(recipeId, 10) : null,
+                custom_meal: recipeId ? null : custom,
+            };
+            try {
+                const res = await fetch(`${API_BASE}/meals`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                if (!res.ok) throw new Error('Save failed');
+                closeModal('meal-modal');
+                showThePlan();
+            } catch (err) {
+                alert('Could not plan that meal.');
+            }
+        }
+
+        // Planning from a recipe should land you where the plan is.
+        function showThePlan() {
+            if (currentTab === 'meals') { loadMeals(); return; }
+            const tab = [...document.querySelectorAll('.tab')]
+                .find(b => b.textContent.includes('Meals'));
+            if (tab) tab.click(); else loadMeals();
+        }
+
+        async function deleteMeal(id) {
+            if (!confirm('Take this off the plan?')) return;
+            await fetch(`${API_BASE}/meals/${id}`, { method: 'DELETE' });
+            loadMeals();
+        }
+
         async function loadMeals() {
             try {
                 const today = new Date();
@@ -3946,7 +4249,7 @@
                 const container = document.getElementById('meals-list');
                 
                 if (meals.length === 0) {
-                    container.innerHTML = '<div class="card"><div class="empty-state"><div class="empty-state-icon">🍽️</div><p>No meals planned this week</p></div></div>';
+                    container.innerHTML = '<div class="card"><div class="empty-state"><div class="empty-state-icon">🍽️</div><p>No meals planned this week.<br>Tap <strong>+</strong> to plan one.</p></div></div>';
                     return;
                 }
                 
@@ -3976,6 +4279,8 @@
                                         </div>
                                     </div>
                                     ${meal.recipe_id ? `
+                                        <button class="btn btn-secondary btn-icon" title="Read the recipe"
+                                                onclick="showRecipe(${meal.recipe_id})">📖</button>
                                         <button class="btn btn-secondary btn-icon" title="What do I need?"
                                                 onclick="showMealAvailability(${meal.id})">🧾</button>
                                         <button class="btn ${meal.cooked_at ? 'btn-secondary' : 'btn-primary'} btn-icon"
@@ -3983,6 +4288,8 @@
                                                 onclick="${meal.cooked_at ? `uncookMeal(${meal.id})` : `cookMeal(${meal.id})`}">
                                             ${meal.cooked_at ? '↩️' : '🍳'}
                                         </button>` : ''}
+                                    <button class="btn btn-danger btn-icon" title="Take off the plan"
+                                            onclick="deleteMeal(${meal.id})">🗑️</button>
                                 </li>
                             `).join('')}
                         </ul>
@@ -4380,6 +4687,9 @@
                     // or photo of whatever was imported last.
                     pendingImport = {};
                     openModal('recipe-modal');
+                    break;
+                case 'meals':
+                    openMealModal();
                     break;
                 case 'grocery':
                     openModal('grocery-modal');

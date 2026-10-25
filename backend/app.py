@@ -537,6 +537,50 @@ def recipe_detail(recipe_id):
         
         return jsonify({'message': 'Recipe deleted'})
 
+@app.route('/api/recipes/<int:recipe_id>/image', methods=['POST', 'DELETE'])
+def recipe_image(recipe_id):
+    """
+    Attach a picture to a recipe, or take it off again.
+
+    Recipes have carried an image_url since the importer could read one off a
+    page, but there has never been a way to put one there by hand. The file
+    goes through the same pipeline as a screensaver photo - HEIC, the phone's
+    rotation, downscaling - without joining the photo library, which would
+    put a picture of dinner into the frame on the wall.
+    """
+    recipe = Recipe.query.get_or_404(recipe_id)
+    previous = recipe.image_url
+
+    if request.method == 'DELETE':
+        recipe.image_url = ''
+        db.session.commit()
+        _discard_recipe_image(previous, keep_recipe_id=recipe.id)
+        return jsonify({'message': 'Picture removed', 'image_url': ''})
+
+    file_storage = request.files.get('file')
+    if file_storage is None:
+        uploaded = request.files.getlist('files')
+        file_storage = uploaded[0] if uploaded else None
+    if not file_storage or not file_storage.filename:
+        return jsonify({'error': 'No file uploaded'}), 400
+
+    try:
+        saved = _save_image_file(file_storage)
+    except ValueError as err:
+        return jsonify({'error': str(err)}), 400
+    except Exception as err:                   # noqa: BLE001 - report, don't 500
+        log.exception('recipe image upload failed')
+        return jsonify({'error': f'Upload failed: {err}'}), 500
+
+    recipe.image_url = f"/photos/{saved['filename']}"
+    db.session.commit()
+    # After the commit, so the "is anything still using it?" check sees the
+    # new value rather than the old one.
+    if previous != recipe.image_url:
+        _discard_recipe_image(previous, keep_recipe_id=recipe.id)
+    return jsonify({'message': 'Picture saved', 'image_url': recipe.image_url})
+
+
 @app.route('/api/recipes/import-url', methods=['POST'])
 def import_recipe_url():
     """
@@ -1596,11 +1640,14 @@ def display_revision():
 
 # ---- Photos ---------------------------------------------------------------
 
-def _store_photo(file_storage):
+def _save_image_file(file_storage):
     """
-    Save an uploaded image, downscaling it when Pillow is available.
+    Validate, rotate, downscale and store one uploaded image on disk.
 
-    Returns a Photo (not yet committed) or raises ValueError with a reason.
+    Returns {'filename', 'original', 'width', 'height', 'bytes'}, or raises
+    ValueError with a reason fit to show the user. The screensaver library
+    and recipe pictures share all of this; they differ only in what gets a
+    row in the database afterwards, which is why no Photo is built here.
     """
     original = os.path.basename(file_storage.filename or 'photo')
     ext = os.path.splitext(original)[1].lower()
@@ -1643,16 +1690,60 @@ def _store_photo(file_storage):
         file_storage.stream.seek(0)
         file_storage.save(path)
 
-    photo = Photo(
-        filename=filename,
-        original_name=original[:255],
+    return {
+        'filename': filename,
+        'original': original,
+        'width': width,
+        'height': height,
+        'bytes': os.path.getsize(path),
+    }
+
+
+def _store_photo(file_storage):
+    """Save an uploaded image and build the screensaver library's Photo row."""
+    saved = _save_image_file(file_storage)
+    return Photo(
+        filename=saved['filename'],
+        original_name=saved['original'][:255],
         caption='',
-        width=width,
-        height=height,
-        bytes=os.path.getsize(path),
+        width=saved['width'],
+        height=saved['height'],
+        bytes=saved['bytes'],
         sort_order=(db.session.query(db.func.max(Photo.sort_order)).scalar() or 0) + 1,
     )
-    return photo
+
+
+def _uploaded_filename(url):
+    """The stored name behind a /photos/<name> URL, or '' if it is not ours."""
+    text = str(url or '')
+    prefix = '/photos/'
+    if not text.startswith(prefix):
+        return ''
+    return os.path.basename(text[len(prefix):])
+
+
+def _discard_recipe_image(url, keep_recipe_id=None):
+    """
+    Delete a recipe picture's file, but only once nothing else points at it.
+
+    An imported recipe's image_url is a link to somebody else's web server,
+    so there is nothing of ours to remove. A file that is also in the
+    screensaver library, or on another recipe, belongs to them too.
+    """
+    filename = _uploaded_filename(url)
+    if not filename:
+        return
+    if Photo.query.filter_by(filename=filename).first():
+        return
+    others = Recipe.query.filter(Recipe.image_url == f'/photos/{filename}')
+    if keep_recipe_id is not None:
+        others = others.filter(Recipe.id != keep_recipe_id)
+    if others.first():
+        return
+    try:
+        os.remove(os.path.join(PHOTO_DIR, filename))
+    except OSError:
+        pass                                   # already gone, or never written
 
 
 @app.route('/api/photos', methods=['GET', 'POST'])
