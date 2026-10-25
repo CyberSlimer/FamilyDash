@@ -1404,7 +1404,7 @@
             <div id="recipe-view-body"></div>
             <div class="modal-actions">
                 <button type="button" class="btn btn-secondary" onclick="closeModal('recipe-view-modal')">Close</button>
-                <button type="button" class="btn btn-secondary" id="recipe-view-photo">📷 Picture</button>
+                <button type="button" class="btn btn-secondary" id="recipe-view-photo">📷 Photo</button>
                 <button type="button" class="btn btn-primary" id="recipe-view-plan">Plan a day</button>
             </div>
         </div>
@@ -2634,11 +2634,9 @@
                         ${recipes.map(recipe => `
                             <li class="item">
                                 ${recipe.image_url ? `
-                                    <div class="recipe-thumb-wrap">
-                                        <img class="recipe-thumb" src="${esc(recipe.image_url)}" alt="" loading="lazy">
-                                        <button class="thumb-remove" title="Remove picture"
-                                                onclick="removeRecipePhoto(${recipe.id})">✕</button>
-                                    </div>` : ''}
+                                    <img class="recipe-thumb" src="${esc(recipe.image_url)}" alt=""
+                                         loading="lazy" style="cursor:pointer"
+                                         onclick="showRecipe(${recipe.id})">` : ''}
                                 <div class="item-content">
                                     <div class="item-title" style="cursor:pointer"
                                          onclick="showRecipe(${recipe.id})">${esc(recipe.name)}</div>
@@ -2650,8 +2648,6 @@
                                     ${recipe.tags.length > 0 ? `<div>${recipe.tags.map(tag => `<span class="tag">${tag}</span>`).join('')}</div>` : ''}
                                 </div>
                                 <div class="item-actions">
-                                    <button class="btn btn-secondary btn-icon" title="${recipe.image_url ? 'Change picture' : 'Add a picture'}"
-                                            onclick="pickRecipePhoto(${recipe.id})">📷</button>
                                     <button class="btn btn-secondary btn-icon" onclick="toggleFavorite(${recipe.id}, ${recipe.favorite})">${recipe.favorite ? '⭐' : '☆'}</button>
                                     <button class="btn btn-danger btn-icon" onclick="deleteRecipe(${recipe.id})">🗑️</button>
                                 </div>
@@ -2748,7 +2744,11 @@
                 const readsAsSteps = lines.length > 1 && !lines.some(line => line.length > 300);
                 const steps = readsAsSteps ? lines : [];
                 body.innerHTML = `
-                    ${recipe.image_url ? `<img class="recipe-photo-preview" src="${esc(recipe.image_url)}" alt="">` : ''}
+                    ${recipe.image_url ? `
+                        <img class="recipe-photo-preview" src="${esc(recipe.image_url)}" alt="">
+                        <p class="form-hint" style="margin-top:-4px">
+                            <a href="#" onclick="event.preventDefault(); removeRecipePhoto(${id})">Remove picture</a>
+                        </p>` : ''}
                     ${recipe.description ? `<p class="modal-intro">${esc(recipe.description)}</p>` : ''}
                     <div class="item-meta">
                         ${minutes ? `⏱️ ${minutes} min` : ''}
