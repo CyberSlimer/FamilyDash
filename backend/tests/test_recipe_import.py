@@ -631,6 +631,29 @@ class ChatTranscriptTests(unittest.TestCase):
         self.assertIn('Pat the chicken dry', out['instructions'])
         self.assertIn('simmer until it thickens', out['instructions'])
 
+    def test_a_page_with_no_bold_title_still_gets_its_name(self):
+        # A photographed cookbook page: the dish name is simply the first
+        # line, with nothing marking it up. It used to be swallowed into
+        # the description, leaving the recipe nameless.
+        page = "
+".join([
+            "Buttermilk Cornbread",
+            "Prep time: 10 minutes",
+            "Serves: 8",
+            "INGREDIENTS",
+            "1 cup cornmeal",
+            "2 large eggs",
+            "INSTRUCTIONS",
+            "1. Heat the oven.",
+            "2. Bake it.",
+        ])
+        out = ri.parse_recipe_chat(page)
+        self.assertEqual(out['name'], 'Buttermilk Cornbread')
+        self.assertEqual(out['prep_time'], 10)
+        self.assertEqual(out['servings'], 8)
+        self.assertEqual(out['ingredients'], ['1 cup cornmeal', '2 large eggs'])
+        self.assertNotIn('Cornbread', out['description'])
+
     def test_a_chat_with_no_headings_still_parses(self):
         out = ri.parse_recipe_chat(
             "Claude said:\n"

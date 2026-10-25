@@ -755,6 +755,13 @@ def parse_recipe_chat(text, name='', url=''):
     if not kept:
         kept, blurb = blurb, []
     elif blurb:
+        # Nothing bold and no markdown heading means the dish name is just
+        # the first line above the ingredients, as it is on a photographed
+        # page. Hand that line back rather than burying it in the
+        # description, and let parse_recipe_text judge it by the same rules
+        # it uses for a pasted recipe.
+        if not title:
+            kept = [blurb.pop(0)] + kept
         description = ' '.join(blurb)[:500]
 
     if not kept:
