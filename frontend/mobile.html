@@ -465,9 +465,22 @@
         }
 
         .item-url {
-            word-break: break-all;
+            /* A Google ICS link runs ~120 characters. Breaking it anywhere made
+               the row six lines tall and squeezed the three action buttons into
+               a narrow column beside it. One line, with the whole URL still on
+               the row's tooltip and in the edit form. */
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
             font-size: 0.8em;
             opacity: 0.8;
+        }
+
+        /* Flex items default to min-width:auto, which refuses to shrink below
+           the intrinsic width of an unbreakable URL - the ellipsis above never
+           fires without this. */
+        .calendar-row .item-content {
+            min-width: 0;
         }
 
         .status-ok { color: #1f9d55; }
@@ -4015,7 +4028,7 @@
                                 <div class="item-content">
                                     <div class="item-title">${esc(cal.name)} <span class="tag">${cal.type === 'caldav' ? 'CalDAV' : 'ICS'}</span></div>
                                     <div class="item-meta">${calendarStatusLine(cal)}</div>
-                                    <div class="item-meta item-url">${esc(cal.type === 'caldav' ? (cal.username ? cal.username + ' @ ' : '') + cal.url : cal.url)}</div>
+                                    <div class="item-meta item-url" title="${esc(cal.url)}">${esc(cal.type === 'caldav' ? (cal.username ? cal.username + ' @ ' : '') + cal.url : cal.url)}</div>
                                     ${cal.calendars && cal.calendars.length ? `<div class="item-meta">Includes: ${esc(cal.calendars.join(', '))}</div>` : ''}
                                 </div>
                                 <div class="item-actions">
