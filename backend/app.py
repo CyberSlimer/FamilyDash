@@ -1399,6 +1399,10 @@ DEFAULT_DISPLAY = {
     # nothing can turn the screen back on, so a short value strands the wall
     # dark. Twenty minutes is right once a sensor is watching the room.
     'display_off_minutes': 240,
+    # Panel backlight, 0-100, driven over DDC/CI. None means "leave the
+    # monitor alone", which is the default so that installing this does not
+    # silently change the brightness of a wall somebody already set by hand.
+    'brightness': None,
     'screensaver': {
         'enabled': False,
         'idle_seconds': 300,
@@ -1451,6 +1455,16 @@ def _validate_display(incoming):
     base['display_off_minutes'] = (
         0 if off_minutes <= 0
         else int(_clamp(off_minutes, 5, 1440, base['display_off_minutes'])))
+
+    brightness = incoming.get('brightness', base['brightness'])
+    if brightness is None or brightness == '':
+        base['brightness'] = None
+    else:
+        try:
+            base['brightness'] = int(_clamp(int(brightness), 0, 100,
+                                            base['brightness'] or 100))
+        except (TypeError, ValueError):
+            base['brightness'] = base['brightness']
 
     base['clock_24h'] = bool(incoming.get('clock_24h', base['clock_24h']))
     base['show_indicators'] = bool(incoming.get('show_indicators', base['show_indicators']))

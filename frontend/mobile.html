@@ -1238,6 +1238,11 @@
                         the wrong way round, the other portrait option turns it the other way.</div>
                 </div>
                 <div class="form-group">
+                    <label class="form-label">Screen brightness</label>
+                    <input type="range" id="display-brightness" min="10" max="100" step="5">
+                    <div class="form-hint" id="display-brightness-hint"></div>
+                </div>
+                <div class="form-group">
                     <label class="form-label">Turn the screen off after (minutes of stillness)</label>
                     <input type="number" class="form-input" id="display-off-minutes" min="0" max="1440">
                     <div class="form-hint" id="display-off-hint"></div>
@@ -1855,7 +1860,7 @@
                 { id: 3, url: photoSvg('#7ed321', '#2f9e44', 'Soccer game'), caption: 'Soccer game', filename: 'demo-3.svg', width: 1200, height: 800, bytes: 4200, sort_order: 3 },
             ];
             const display = {
-                rotation_interval: 30, screen_rotation: 'normal', display_off_minutes: 240,
+                rotation_interval: 30, screen_rotation: 'normal', display_off_minutes: 240, brightness: 100,
                 clock_24h: false, show_indicators: true,
                 theme: { primary: '#667eea', secondary: '#764ba2', text: '#ffffff',
                          accent: '#ffd166', card_opacity: 0.1, scale: 1,
@@ -3159,7 +3164,7 @@
         // like it worked. test_display.py checks the two lists agree.
         const DISPLAY_INPUTS = [
             'display-rotation', 'display-screen-rotation', 'display-off-minutes',
-            'display-24h',
+            'display-brightness', 'display-24h',
             'display-indicators', 'display-home-focus',
             'theme-primary', 'theme-secondary', 'theme-text', 'theme-accent',
             'theme-font', 'theme-scale', 'theme-opacity',
@@ -3250,6 +3255,9 @@
 
             document.getElementById('display-rotation').value = c.rotation_interval;
             document.getElementById('display-screen-rotation').value = c.screen_rotation || 'normal';
+            document.getElementById('display-brightness').value =
+                c.brightness === null || c.brightness === undefined ? 100 : c.brightness;
+            brightnessHint();
             document.getElementById('display-off-minutes').value =
                 c.display_off_minutes === undefined ? 240 : c.display_off_minutes;
             document.getElementById('display-24h').checked = !!c.clock_24h;
@@ -3299,6 +3307,7 @@
             return {
                 rotation_interval: parseInt(document.getElementById('display-rotation').value, 10) || 30,
                 screen_rotation: document.getElementById('display-screen-rotation').value,
+                brightness: parseInt(document.getElementById('display-brightness').value, 10),
                 display_off_minutes: parseInt(document.getElementById('display-off-minutes').value, 10) || 0,
                 clock_24h: document.getElementById('display-24h').checked,
                 show_indicators: document.getElementById('display-indicators').checked,
@@ -3367,7 +3376,15 @@
                   + 'Display tab. The screensaver above works either way.';
         }
 
+        function brightnessHint() {
+            const value = document.getElementById('display-brightness').value;
+            document.getElementById('display-brightness-hint').textContent =
+                `${value}% - the monitor's own backlight, not a dark layer over the page. `
+                + 'Takes up to half a minute to reach the wall.';
+        }
+
         function queueDisplaySave() {
+            brightnessHint();
             updateThemePreview();
             homeFocusHint();
             saverHint();

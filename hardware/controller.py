@@ -126,10 +126,43 @@ LAST_CONFIG_FETCH = None
 # the two in step.
 LAST_WAKE = None
 CURRENT_ROTATION = None
+# Last backlight level handed to the monitor. None means we have not been
+# asked to manage it, so whatever the screen is set to is left alone.
+CURRENT_BRIGHTNESS = None
 ROTATIONS = ("normal", "90", "180", "270")
 # Set once while there is no screen to rotate, so the message is said once
 # rather than every refresh.
 ROTATION_UNREACHABLE = False
+
+
+def apply_brightness(value):
+    """
+    Set the panel's own backlight over DDC/CI.
+
+    This is the monitor's real brightness control, not a dark layer drawn
+    over the page: the backlight actually comes down, which is the
+    difference between a readable wall at night and a grey one. Monitors
+    that do not answer DDC/CI simply fail here and are left alone.
+    """
+    global CURRENT_BRIGHTNESS
+    if value is None or value == CURRENT_BRIGHTNESS:
+        return
+    if not shutil.which("ddcutil"):
+        print(f"Brightness: asked for {value}% but ddcutil is not installed")
+        CURRENT_BRIGHTNESS = value
+        return
+    try:
+        result = subprocess.run(["ddcutil", "setvcp", "10", str(int(value))],
+                                capture_output=True, text=True, timeout=20)
+        if result.returncode == 0:
+            print(f"Brightness: {value}%")
+            CURRENT_BRIGHTNESS = value
+        else:
+            # Not recorded, so a monitor that was merely asleep is retried.
+            print(f"Brightness: monitor refused {value}% "
+                  f"({result.stderr.strip()[:120] or 'no reason given'})")
+    except Exception as exc:
+        print(f"Brightness: could not set {value}% ({exc})")
 
 
 def apply_rotation(value):
@@ -190,6 +223,7 @@ def refresh_config():
         print(f"Display config: screensaver={'on' if SCREENSAVER['enabled'] else 'off'}"
               f" idle={SCREENSAVER['idle_seconds']}s sleep={sleeps}")
         apply_rotation(str(config.get("screen_rotation") or "normal"))
+        apply_brightness(config.get("brightness"))
     except Exception as e:
         print(f"Could not read display config ({e}); keeping current settings")
 
