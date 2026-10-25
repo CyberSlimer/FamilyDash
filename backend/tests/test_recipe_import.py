@@ -552,6 +552,27 @@ class ChatTranscriptTests(unittest.TestCase):
         self.assertEqual(out['source'], 'chat')
         self.assertIn('sticky and sweet', out['description'])
 
+    def test_a_markdown_heading_title_is_used_as_the_name(self):
+        # Assistants put the dish name in bold or as a heading depending
+        # on the day. A heading used to fall through into the description.
+        chat = "\n".join([
+            "Claude said:",
+            "## Skillet Beef and Rice",
+            "Makes: 6 servings",
+            "One pan, and it reheats well.",
+            "**Ingredients**",
+            "* 1 lb ground beef",
+            "* 1 cup rice",
+            "**Instructions**",
+            "1. Brown the beef.",
+        ])
+        out = ri.parse_recipe_chat(chat)
+        self.assertEqual(out['name'], 'Skillet Beef and Rice')
+        self.assertNotIn('Skillet Beef and Rice', out['description'])
+        self.assertEqual(out['servings'], 6)
+        self.assertEqual(out['ingredients'], ['1 lb ground beef', '1 cup rice'])
+        self.assertIn('Brown the beef', out['instructions'])
+
     def test_the_question_that_was_asked_is_not_a_step(self):
         out = ri.parse_recipe_chat(CHATGPT_PASTE)
         self.assertNotIn('kids will eat', out['instructions'])

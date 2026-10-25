@@ -577,6 +577,7 @@ _META_LINE = re.compile(
     r'\s*[:\-–]\s*(.+?)\s*$', re.I)
 
 _BOLD_ONLY = re.compile(r'^\s*(?:\*\*|__)(.+?)(?:\*\*|__)\s*:?\s*$')
+_ATX_HEADING = re.compile(r'^\s{0,3}#{1,6}\s+\S')
 _HORIZONTAL_RULE = re.compile(r'^\s*(?:[-*_]\s*){3,}$')
 
 
@@ -602,7 +603,7 @@ def strip_markdown(line):
 _CHAT_SIGNALS = (
     _USER_TURN,
     _ASSISTANT_TURN,
-    re.compile(r'^\s{0,3}#{1,6}\s+\S'),   # ## Ingredients
+    _ATX_HEADING,                         # ## Ingredients
     _BOLD_ONLY,                           # **Honey Garlic Chicken**
 )
 
@@ -641,7 +642,10 @@ def parse_recipe_chat(text, name='', url=''):
         if in_user_turn:
             continue  # the question that was asked is not part of the answer
 
-        bold_heading = _BOLD_ONLY.match(raw)
+        # The dish name arrives either bold or as a markdown heading, depending
+        # on the assistant and the day. Both are title candidates; which one it
+        # turns out to be is settled below, once is_section is known.
+        titleish = bool(_BOLD_ONLY.match(raw) or _ATX_HEADING.match(raw))
         line = strip_markdown(raw)
         if not line:
             continue
@@ -665,7 +669,7 @@ def parse_recipe_chat(text, name='', url=''):
 
         # The assistant almost always puts the dish name on a bold line of its
         # own, which beats the first thing it happens to say.
-        if not title and bold_heading and not is_section:
+        if not title and titleish and not is_section:
             title = line
             continue
 
