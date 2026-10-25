@@ -7,6 +7,7 @@ Run from the backend/ directory:
 
 import io
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -175,6 +176,47 @@ class ConfigTests(DisplayTestCase):
         dashboard._put_setting('display_config', 'not json{')
         dashboard.db.session.commit()
         self.assertEqual(self.get_config()['rotation_interval'], 30)
+
+
+class DisplayFormWiringTests(unittest.TestCase):
+    """
+    The Display tab autosaves; it has no Save button.
+
+    A control that collectDisplay() reads but DISPLAY_INPUTS does not list
+    gets no input/change listener, so changing it saves nothing while
+    looking for all the world like it worked. That is how the screen
+    rotation shipped broken. The fault is invisible from the backend, so
+    this reads the page itself.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        backend = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        page = os.path.join(backend, '..', 'frontend', 'mobile.html')
+        with open(page, encoding='utf-8') as fh:
+            cls.html = fh.read()
+
+    def listed_inputs(self):
+        block = re.search(r'const DISPLAY_INPUTS = \[(.*?)\]', self.html, re.S)
+        self.assertIsNotNone(block, 'DISPLAY_INPUTS has been renamed or removed')
+        return set(re.findall(r"'([^']+)'", block.group(1)))
+
+    def read_by_collect_display(self):
+        body = re.search(r'function collectDisplay\(\) \{(.*?)\n        \}',
+                         self.html, re.S)
+        self.assertIsNotNone(body, 'collectDisplay has been renamed or removed')
+        return set(re.findall(r"getElementById\('([^']+)'\)", body.group(1)))
+
+    def test_every_saved_control_also_autosaves(self):
+        missing = sorted(self.read_by_collect_display() - self.listed_inputs())
+        self.assertEqual(
+            missing, [],
+            'collectDisplay reads these, but DISPLAY_INPUTS does not list them, '
+            'so changing them saves nothing: %s' % missing)
+
+    def test_the_rotation_control_is_wired(self):
+        self.assertIn('display-screen-rotation', self.listed_inputs())
+        self.assertIn('display-screen-rotation', self.read_by_collect_display())
 
 
 class ScreenRotationTests(DisplayTestCase):

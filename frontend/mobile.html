@@ -3147,9 +3147,13 @@
         };
 
         // Controls that just write a value: any change saves the whole config.
+        // Every control collectDisplay() reads has to be listed here, or it
+        // silently never saves: the tab has no Save button, it autosaves on
+        // input/change, and a control with no listener just sits there looking
+        // like it worked. test_display.py checks the two lists agree.
         const DISPLAY_INPUTS = [
-            'display-rotation', 'display-24h', 'display-indicators',
-            'display-home-focus',
+            'display-rotation', 'display-screen-rotation', 'display-24h',
+            'display-indicators', 'display-home-focus',
             'theme-primary', 'theme-secondary', 'theme-text', 'theme-accent',
             'theme-font', 'theme-scale', 'theme-opacity',
             'saver-enabled', 'saver-idle', 'saver-interval', 'saver-shuffle', 'saver-clock',
