@@ -119,6 +119,9 @@ LAST_CONFIG_FETCH = None
 # rotation survives a reboot without anything being written to system config.
 CURRENT_ROTATION = None
 ROTATIONS = ("normal", "90", "180", "270")
+# Set once while there is no screen to rotate, so the message is said once
+# rather than every refresh.
+ROTATION_UNREACHABLE = False
 
 
 def apply_rotation(value):
@@ -128,17 +131,25 @@ def apply_rotation(value):
     still counts as "asked", so a Pi whose compositor cannot rotate says so
     once rather than every thirty seconds; changing the setting asks again.
     """
-    global CURRENT_ROTATION
+    global CURRENT_ROTATION, ROTATION_UNREACHABLE
     if value not in ROTATIONS or value == CURRENT_ROTATION:
         return
-    CURRENT_ROTATION = value
 
     env = session_env()
     output = wlr_output(env)
     if not shutil.which("wlr-randr") or not output:
-        print(f"Screen rotation: asked for {value}, but wlr-randr cannot reach "
-              "an output here - rotate the screen in the OS instead")
+        # Deliberately not recorded as an attempt. There is no screen to turn
+        # yet - unplugged, or the compositor is down to its headless
+        # placeholder - and one plugged in later should come up the right way
+        # round without anyone having to restart the service.
+        if not ROTATION_UNREACHABLE:
+            print(f"Screen rotation: {value} is pending - no real output to turn "
+                  "yet. It will be applied when a screen is connected.")
+            ROTATION_UNREACHABLE = True
         return
+
+    ROTATION_UNREACHABLE = False
+    CURRENT_ROTATION = value
     try:
         result = subprocess.run(["wlr-randr", "--output", output, "--transform", value],
                                 env=env, capture_output=True, text=True, timeout=15)
