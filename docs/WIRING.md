@@ -181,8 +181,13 @@ widen the search.
 ### Sensor Configuration
 
 **Jumper Settings:**
-- Position: L (Repeatable Trigger Mode)
-- This allows continuous detection
+- Position: **H** - repeat trigger. On an HC-SR501 it is H that retriggers,
+  not L; L fires once and then ignores whatever happens until its delay runs
+  out.
+- The service polls the pin's level once a second and reads high as "someone is
+  here", so H is what keeps the output up while a person is still in the room.
+  In L the dashboard would drop back to the screensaver with someone standing
+  in front of it.
 
 **Sensitivity Dial:**
 - Turn clockwise for more range (3-7 meters)
@@ -332,7 +337,7 @@ unconnected GPIO 27 reports motion, the pull-down above is missing.
 
 **Troubleshooting:**
 - Always detects motion: Turn sensitivity down, check for heat sources
-- Never detects motion: Check wiring, ensure jumper in L position
+- Never detects motion: Check wiring, ensure jumper in H position
 - Sensor not powered: Check 5V connection, ensure VCC connected
 - Motion for the first minute after power-on: normal. The module settles for
   about a minute, which is why `MOTION_WARMUP` ignores the pin until then.
