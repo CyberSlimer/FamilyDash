@@ -592,8 +592,12 @@ def parse_recipe_photo(file_storage, name='', url=''):
             'No readable text in that photo. Try again with the page flat, '
             'filling the frame, and the light not behind you.')
 
-    parser = parse_recipe_chat if looks_like_chat(text) else parse_recipe_text
-    recipe = parser(text, name=name, url=url)
+    # Always the chat parser, despite the name. What it really does is
+    # normalise and then delegate, and two of those steps earn their keep on
+    # a photographed page: it reads "Prep time: 10 minutes" and "Serves: 8"
+    # off their own lines, which parse_recipe_text would otherwise file as
+    # ingredients, and the conversation-stripping is simply a no-op here.
+    recipe = parse_recipe_chat(text, name=name, url=url)
     recipe['source'] = 'photo'
     return recipe
 
