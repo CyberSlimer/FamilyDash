@@ -72,6 +72,16 @@ BUTTON_READY = False
 # stop believing it: a wall that flips screens by itself is worse than a wall
 # whose button does nothing.
 PRESS_TIMES = deque()
+
+# Gesture timing. A tap is counted when the pad is released; the group is
+# resolved once nothing further arrives for GESTURE_GAP, which is what makes
+# a single tap distinguishable from the first half of a double. The gap is
+# the whole latency cost of having more than one gesture, so it is kept
+# short enough not to feel laggy.
+GESTURE_GAP = 0.45
+LONG_PRESS = 0.9
+MAX_HOLD = 6.0
+BUTTON_GESTURES = {"single": "next", "double": "month", "hold": "home"}
 STORM_PRESSES = 8
 STORM_WINDOW = 10.0
 
@@ -218,6 +228,10 @@ def refresh_config():
         }
         DISPLAY_OFF_MINUTES = float(config.get("display_off_minutes",
                                                  DISPLAY_OFF_MINUTES))
+        bound = config.get("button_gestures")
+        if isinstance(bound, dict):
+            BUTTON_GESTURES.update({k: str(v) for k, v in bound.items()
+                                    if k in BUTTON_GESTURES})
         sleeps = (f"{DISPLAY_OFF_MINUTES:.0f}min" if DISPLAY_OFF_MINUTES > 0
                   else "never")
         print(f"Display config: screensaver={'on' if SCREENSAVER['enabled'] else 'off'}"
@@ -442,6 +456,88 @@ def refresh_screen():
 # BUTTON HANDLER
 # ============================================================================
 
+def classify_taps(holds, long_press=LONG_PRESS):
+    """
+    Name the gesture a burst of taps adds up to.
+
+    `holds` is how long the pad was held for each tap in the burst, in
+    order. Kept apart from the GPIO so it can be tested without a Pi, which
+    matters because tap timing is exactly the sort of thing that is wrong in
+    ways no amount of staring at the code reveals.
+    """
+    if not holds:
+        return None
+    if len(holds) == 1:
+        return "hold" if holds[0] >= long_press else "single"
+    # Three taps is someone being emphatic with a pad that missed one, not a
+    # third gesture; treat anything above two as a double.
+    return "double"
+
+
+def gesture_action(gesture):
+    """Which command a gesture is bound to, or None for 'do nothing'."""
+    action = BUTTON_GESTURES.get(gesture, "none")
+    return None if action in ("none", "") else action
+
+
+def run_gesture(gesture):
+    """Carry out whatever the gesture is bound to."""
+    action = gesture_action(gesture)
+    if action is None:
+        print(f"Touch: {gesture} - not bound to anything")
+        return
+    print(f"Touch: {gesture} -> {action}")
+    note_touch()
+    turn_display_on()
+    if action == "next":
+        next_screen()
+    elif action == "prev":
+        previous_screen()
+    elif action == "refresh":
+        refresh_screen()
+    else:
+        # home, month, saver and wake are all plain commands to the page.
+        send_command(action)
+
+
+def note_touch():
+    """A touch is a person, so the idle clock starts again from here."""
+    global LAST_MOTION
+    LAST_MOTION = datetime.now()
+
+
+def collect_gesture(first_hold):
+    """
+    Wait out the rest of a burst of taps, then act on it.
+
+    Runs on the GPIO callback's own thread. Each further tap is waited for
+    up to GESTURE_GAP; when none arrives the burst is over.
+    """
+    holds = [first_hold]
+    while True:
+        deadline = time.monotonic() + GESTURE_GAP
+        tapped = False
+        while time.monotonic() < deadline:
+            if GPIO.input(BUTTON_PIN) == BUTTON_PRESSED:
+                holds.append(measure_hold())
+                tapped = True
+                break
+            time.sleep(0.01)
+        if not tapped:
+            break
+    run_gesture(classify_taps(holds))
+
+
+def measure_hold():
+    """Seconds the pad stays pressed, giving up after MAX_HOLD."""
+    started = time.monotonic()
+    while GPIO.input(BUTTON_PIN) == BUTTON_PRESSED:
+        if time.monotonic() - started > MAX_HOLD:
+            break
+        time.sleep(0.01)
+    return time.monotonic() - started
+
+
 def button_callback(channel):
     """Handle button press"""
     global LAST_MOTION, BUTTON_READY
@@ -470,10 +566,9 @@ def button_callback(channel):
               "and the phone can still drive them.")
         return
 
-    print("Button pressed!")
-    LAST_MOTION = datetime.now()
-    turn_display_on()
-    next_screen()
+    # How long this first tap lasts, and then whether more follow, decides
+    # which gesture it was. Everything happens on this callback thread.
+    collect_gesture(measure_hold())
 
 # ============================================================================
 # MOTION SENSOR HANDLER
@@ -605,7 +700,10 @@ def main():
 
     print("Ready!")
     if BUTTON_READY:
-        print(f"- Use the {BUTTON_KIND} on GPIO {BUTTON_PIN} to advance screens")
+        print(f"- {BUTTON_KIND.capitalize()} on GPIO {BUTTON_PIN}: "
+              f"tap={BUTTON_GESTURES['single']}, "
+              f"double tap={BUTTON_GESTURES['double']}, "
+              f"hold={BUTTON_GESTURES['hold']}")
     else:
         print("- No working button; advance screens from the phone's Display tab")
     if MOTION_READY:

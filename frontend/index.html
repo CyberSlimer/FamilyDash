@@ -782,6 +782,59 @@
             letter-spacing: 0.02em;
         }
 
+        /* Six rows is the most any month needs; sizing them equally keeps a
+           31-day month that starts on a Saturday from squashing the last row. */
+        .month-grid {
+            display: grid;
+            grid-template-columns: repeat(7, minmax(0, 1fr));
+            grid-auto-rows: minmax(0, 1fr);
+            gap: 8px;
+            height: 100%;
+            min-height: 0;
+        }
+
+        .month-dow {
+            text-align: center;
+            font-size: 1.1em;
+            font-weight: 600;
+            opacity: 0.6;
+            padding-bottom: 2px;
+        }
+
+        .month-grid .month-dow { grid-row: 1; }
+        .month-grid { grid-template-rows: auto repeat(6, minmax(0, 1fr)); }
+
+        .month-day {
+            background: var(--fd-card);
+            border-radius: 10px;
+            padding: 8px 10px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+
+        .month-day.outside { opacity: 0.35; }
+
+        .month-day.today {
+            background: rgba(255, 255, 255, 0.22);
+            border: 2px solid rgba(255, 255, 255, 0.55);
+        }
+
+        .month-num { font-size: 1.15em; font-weight: 600; }
+
+        .month-event {
+            font-size: 0.8em;
+            line-height: 1.25;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            padding-left: 8px;
+            border-left: 3px solid var(--fd-accent);
+        }
+
+        .month-more { font-size: 0.75em; opacity: 0.7; }
+
         /* ============================================ */
         /* PORTRAIT                                     */
         /* ============================================ */
@@ -872,6 +925,23 @@
                     <div class="loading"></div>
                 </div>
             </section>
+        </div>
+    </div>
+
+    <!-- Summoned rather than rotated through: a double tap on the touch pad
+         asks for the month, and the wall hands itself back afterwards. -->
+    <div class="screen" id="screen-month" data-screen-id="month">
+        <div class="header">
+            <h1 id="month-title">🗓️ Month</h1>
+            <div class="datetime">
+                <div class="time" id="time-month">--:--</div>
+                <div class="date" id="date-month">Loading...</div>
+            </div>
+        </div>
+        <div class="content">
+            <div class="month-grid" id="month-grid">
+                <div class="loading"></div>
+            </div>
         </div>
     </div>
 
@@ -1694,30 +1764,111 @@
             }
         }
 
-        function refreshCurrentScreen() {
-            const screen = rotation[currentIndex];
-            if (!screen) return;
-            // The photo screen owns its own timer; every other screen stops it
-            // so a hidden slideshow isn't churning through images.
-            if (screen.id === 'photos') photoScreen.start(); else photoScreen.stop();
+        async function fetchMonthCalendar() {
+            const grid = document.getElementById('month-grid');
+            const now = new Date();
+            const first = new Date(now.getFullYear(), now.getMonth(), 1);
+            // The grid starts on the Sunday on or before the 1st and always
+            // runs six weeks, so the shape does not jump about month to month.
+            const start = new Date(first);
+            start.setDate(1 - first.getDay());
+            const end = new Date(start);
+            end.setDate(start.getDate() + 42);
 
-            switch (screen.id) {
+            document.getElementById('month-title').textContent =
+                '\u{1F5D3}\uFE0F ' + now.toLocaleDateString(undefined,
+                    { month: 'long', year: 'numeric' });
+
+            let events = [];
+            try {
+                const ymd = d => d.toLocaleDateString('en-CA');
+                const res = await fetch(
+                    `${API_BASE}/calendar/events?start_date=${ymd(start)}&end_date=${ymd(end)}`);
+                events = await res.json();
+            } catch (err) {
+                console.error('Month view could not load events:', err);
+            }
+
+            // Bucket by local day. A multi-day event belongs to every day it
+            // touches, the same as the home screen treats it.
+            const byDay = {};
+            for (const ev of events) {
+                const from = new Date(ev.start), to = new Date(ev.end);
+                for (let d = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+                     d < to; d.setDate(d.getDate() + 1)) {
+                    (byDay[d.toLocaleDateString('en-CA')] ||= []).push(ev);
+                }
+            }
+
+            const todayKey = new Date().toLocaleDateString('en-CA');
+            let html = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+                .map(d => `<div class="month-dow">${d}</div>`).join('');
+
+            for (let i = 0; i < 42; i++) {
+                const day = new Date(start);
+                day.setDate(start.getDate() + i);
+                const key = day.toLocaleDateString('en-CA');
+                const items = byDay[key] || [];
+                const classes = ['month-day'];
+                if (day.getMonth() !== now.getMonth()) classes.push('outside');
+                if (key === todayKey) classes.push('today');
+                html += `<div class="${classes.join(' ')}">
+                    <div class="month-num">${day.getDate()}</div>
+                    ${items.slice(0, 3).map(ev =>
+                        `<div class="month-event" style="border-left-color:${esc(ev.color || 'var(--fd-accent)')}"
+                              title="${esc(ev.title)}">${esc(ev.title)}</div>`).join('')}
+                    ${items.length > 3 ? `<div class="month-more">+${items.length - 3} more</div>` : ''}
+                </div>`;
+            }
+            grid.innerHTML = html;
+        }
+
+        // Dispatch by screen id rather than by rotation position, so a screen
+        // that is not in the rotation at all can still be shown and refreshed.
+        function refreshScreenById(id) {
+            if (id === 'photos') photoScreen.start(); else photoScreen.stop();
+            switch (id) {
                 case 'calendar':
                     fetchCalendarEvents();
                     fetchWeather();
                     fetchTodaysDinner();
                     break;
                 case 'meals':
-                    // One screen, two fetches. The 'grocery' case that used to
-                    // sit below this could never fire once the screens merged,
-                    // so the list stayed on its loading spinner for ever.
                     fetchMealPlan();
                     fetchGroceryList();
+                    break;
+                case 'month':
+                    fetchMonthCalendar();
                     break;
                 case 'recipes':
                     fetchRecipesAndPantry();
                     break;
             }
+        }
+
+        let peekTimer = null;
+
+        // Show a screen whether or not it is part of the rotation, then hand
+        // the wall back. A double tap asking for the month should work without
+        // anyone having had to add the month to the cycle first.
+        function peekScreen(id, seconds = 60) {
+            const el = screenEl(id);
+            if (!el) return;
+            clearTimeout(peekTimer);
+            stopRotation();
+            document.querySelectorAll('.screen').forEach(e => e.classList.remove('active'));
+            el.classList.add('active');
+            refreshScreenById(id);
+            peekTimer = setTimeout(() => showIndex(currentIndex), Math.max(5, seconds) * 1000);
+        }
+
+        function refreshCurrentScreen() {
+            clearTimeout(peekTimer);
+            const screen = rotation[currentIndex];
+            if (!screen) return;
+            // The photo screen owns its own timer; every other screen stops it
+            // so a hidden slideshow isn't churning through images.
+            refreshScreenById(screen.id);
         }
 
         // =============================================
@@ -1778,6 +1929,8 @@
                 case 'screen':
                     if (Number.isInteger(cmd.index)) showIndex(cmd.index);
                     break;
+                case 'home':    showIndex(0); break;
+                case 'month':   peekScreen('month'); break;
                 case 'wake':    break;  // noteInteraction above is the whole job
                 // Photos on demand, so a new upload can be checked from the
                 // sofa. hideScreensaver above cleared forcedSaver, so set it

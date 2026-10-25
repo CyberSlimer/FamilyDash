@@ -1384,6 +1384,9 @@ SCREEN_TYPES = {
     # and the list below. A stored config still naming 'grocery' simply
     # drops it, which _validate_display already does for unknown ids.
     'meals': 'Meals & Grocery',
+    # Off in the rotation by default: it is mainly somewhere to jump to - a
+    # double tap on the touch pad - rather than something to watch go by.
+    'month': 'Month Calendar',
     'recipes': 'Recipes & Pantry',
     'photos': 'Photos',
 }
@@ -1391,6 +1394,11 @@ SCREEN_TYPES = {
 # wlr-randr's --transform values. Anything else is refused rather than
 # handed to a subprocess on the Pi.
 SCREEN_ROTATIONS = ('normal', '90', '180', '270')
+
+# What a touch gesture may be bound to. 'none' is a real choice: a pad by
+# the door probably should not be able to put the wall into photos.
+BUTTON_GESTURES = ('single', 'double', 'hold')
+GESTURE_ACTIONS = ('none', 'next', 'prev', 'home', 'month', 'saver', 'wake', 'refresh')
 
 DEFAULT_DISPLAY = {
     'rotation_interval': 30,
@@ -1420,6 +1428,7 @@ DEFAULT_DISPLAY = {
     'screens': [
         {'id': 'calendar', 'enabled': True, 'duration': None},
         {'id': 'meals', 'enabled': True, 'duration': None},
+        {'id': 'month', 'enabled': False, 'duration': None},
         {'id': 'recipes', 'enabled': True, 'duration': None},
         {'id': 'photos', 'enabled': False, 'duration': 60,
          'options': {'interval': 8, 'shuffle': True, 'captions': True}},
@@ -1433,6 +1442,14 @@ DEFAULT_DISPLAY = {
     # monitor alone", which is the default so that installing this does not
     # silently change the brightness of a wall somebody already set by hand.
     'brightness': None,
+    # What the touch pad does. One input carries several gestures because
+    # they are only a matter of timing: a tap, two taps inside the grouping
+    # window, or one long hold.
+    'button_gestures': {
+        'single': 'next',
+        'double': 'month',
+        'hold': 'home',
+    },
     'screensaver': {
         'enabled': False,
         'idle_seconds': 300,
@@ -1495,6 +1512,13 @@ def _validate_display(incoming):
                                             base['brightness'] or 100))
         except (TypeError, ValueError):
             base['brightness'] = base['brightness']
+
+    gestures_in = incoming.get('button_gestures')
+    if isinstance(gestures_in, dict):
+        for gesture in BUTTON_GESTURES:
+            action = str(gestures_in.get(gesture, base['button_gestures'][gesture]))
+            if action in GESTURE_ACTIONS:
+                base['button_gestures'][gesture] = action
 
     base['clock_24h'] = bool(incoming.get('clock_24h', base['clock_24h']))
     base['show_indicators'] = bool(incoming.get('show_indicators', base['show_indicators']))
@@ -1647,7 +1671,8 @@ def reset_display_config():
 # Held in memory rather than in the settings table: a button press is
 # ephemeral, it should not survive a restart, and persisting it would mean a
 # database write per press and a database read every second from the poll.
-DISPLAY_COMMANDS = ('next', 'prev', 'refresh', 'reload', 'wake', 'screen', 'saver')
+DISPLAY_COMMANDS = ('next', 'prev', 'refresh', 'reload', 'wake', 'screen',
+                    'saver', 'home', 'month')
 
 _display_command = {'seq': 0, 'action': None, 'index': None}
 _display_command_lock = threading.Lock()
