@@ -21,5 +21,8 @@ rpi-lgpio>=0.6; sys_platform == "linux" and (platform_machine == "armv7l" or pla
 
 # Photo uploads for the kiosk slideshow (optional: without it photos are
 # stored as uploaded and HEIC is rejected)
-Pillow>=10.0
+Pillow
+# Reading a recipe off a photograph. Needs the tesseract-ocr system
+# package too; without either, photo import reports that rather than failing.
+pytesseract>=10.0
 pillow-heif>=0.13; platform_system != "Windows"

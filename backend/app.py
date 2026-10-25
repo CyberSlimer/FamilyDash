@@ -537,6 +537,36 @@ def recipe_detail(recipe_id):
         
         return jsonify({'message': 'Recipe deleted'})
 
+@app.route('/api/recipes/import-photo', methods=['POST'])
+def import_recipe_photo():
+    """
+    Read a recipe off a photograph of a page.
+
+    The way in for a cookbook, a card in somebody's handwriting, or a recipe
+    torn out of a magazine - none of which have a URL to fetch. OCR is never
+    perfect, so the result goes into the same editable form every other
+    import uses rather than straight into the database.
+    """
+    file_storage = request.files.get('file')
+    if file_storage is None:
+        uploaded = request.files.getlist('files')
+        file_storage = uploaded[0] if uploaded else None
+    if not file_storage or not file_storage.filename:
+        return jsonify({'error': 'No photo uploaded'}), 400
+
+    try:
+        return jsonify(rimport.parse_recipe_photo(
+            file_storage,
+            name=(request.form.get('name') or '').strip(),
+            url=(request.form.get('source_url') or '').strip(),
+        ))
+    except rimport.ImportFailed as exc:
+        return jsonify({'error': str(exc)}), 422
+    except Exception as exc:                   # noqa: BLE001 - report, don't 500
+        log.exception('Recipe photo import failed')
+        return jsonify({'error': f'Could not read that photo: {exc}'}), 500
+
+
 @app.route('/api/recipes/<int:recipe_id>/image', methods=['POST', 'DELETE'])
 def recipe_image(recipe_id):
     """

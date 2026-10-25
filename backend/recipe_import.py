@@ -543,6 +543,62 @@ def _looks_like_ingredient(line):
 
 
 # ============================================================================
+# PHOTOGRAPHS
+# ============================================================================
+
+# Optional, like the calendar libraries: the rest of the importer works
+# without them and says so rather than failing on an import.
+try:
+    import pytesseract
+    from PIL import Image, ImageOps
+    HAVE_OCR = True
+except ImportError:  # pragma: no cover - depends what is on the Pi
+    HAVE_OCR = False
+
+
+def read_image_text(stream):
+    """
+    Pull the words out of a photograph of a recipe.
+
+    A phone photo of a page is not a scan - it is off angle, unevenly lit,
+    and often shot close enough that only part of the page is sharp.
+    Greyscale plus an autocontrast stretch does most of the useful work.
+    Anything under about a thousand pixels across is enlarged first, because
+    Tesseract reads large soft text considerably better than small crisp
+    text, which is the opposite of what people expect.
+    """
+    if not HAVE_OCR:
+        raise ImportFailed(
+            'Reading photos needs tesseract-ocr and pytesseract installed on '
+            'the Pi. Until then, type the recipe or paste it as text.')
+
+    stream.seek(0)
+    with Image.open(stream) as img:
+        img = ImageOps.exif_transpose(img)          # honour the phone's rotation
+        img = img.convert('L')
+        if img.width < 1000:
+            scale = 1000.0 / img.width
+            img = img.resize((int(img.width * scale), int(img.height * scale)),
+                             Image.LANCZOS)
+        img = ImageOps.autocontrast(img)
+        return pytesseract.image_to_string(img)
+
+
+def parse_recipe_photo(file_storage, name='', url=''):
+    """A photograph in, the same recipe fields out as every other importer."""
+    text = read_image_text(file_storage.stream)
+    if not text.strip():
+        raise ImportFailed(
+            'No readable text in that photo. Try again with the page flat, '
+            'filling the frame, and the light not behind you.')
+
+    parser = parse_recipe_chat if looks_like_chat(text) else parse_recipe_text
+    recipe = parser(text, name=name, url=url)
+    recipe['source'] = 'photo'
+    return recipe
+
+
+# ============================================================================
 # CHAT TRANSCRIPTS
 # ============================================================================
 #

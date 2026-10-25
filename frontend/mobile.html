@@ -1552,8 +1552,15 @@
                     <button type="submit" class="btn btn-primary">Read Recipe</button>
                 </div>
             </form>
-            <button type="button" class="btn btn-secondary btn-small" id="import-paste-toggle"
-                    onclick="showPasteImport()">Paste a recipe or chat instead</button>
+            <input type="file" id="import-photo-file" accept="image/*" capture="environment"
+                   style="display: none;" onchange="importRecipePhoto(this)">
+            <div class="quick-picks" id="import-alternatives">
+                <button type="button" class="chip" id="import-paste-toggle"
+                        onclick="showPasteImport()">Paste a recipe or chat</button>
+                <button type="button" class="chip" id="import-photo-btn"
+                        onclick="document.getElementById('import-photo-file').click()">📷 Photograph a page</button>
+            </div>
+            <div class="form-hint" id="import-photo-status"></div>
         </div>
     </div>
 
@@ -2872,7 +2879,7 @@
 
         function showPasteImport(reason = '') {
             document.getElementById('import-url-form').style.display = 'none';
-            document.getElementById('import-paste-toggle').style.display = 'none';
+            document.getElementById('import-alternatives').style.display = 'none';
             document.getElementById('import-paste-form').style.display = '';
             document.getElementById('import-paste-reason').textContent = reason;
             document.getElementById('import-text').focus();
@@ -2880,7 +2887,7 @@
 
         function showUrlImport() {
             document.getElementById('import-url-form').style.display = '';
-            document.getElementById('import-paste-toggle').style.display = '';
+            document.getElementById('import-alternatives').style.display = '';
             document.getElementById('import-paste-form').style.display = 'none';
             document.getElementById('import-paste-reason').textContent = '';
         }
@@ -2935,6 +2942,37 @@
             } finally {
                 submitBtn.disabled = false;
                 submitBtn.textContent = label;
+            }
+        }
+
+        // A cookbook, a card in somebody's handwriting, a page torn out of a
+        // magazine: none of them have a URL. The reading is done on the Pi and
+        // lands in the same editable form as every other import, because OCR
+        // gets things wrong and the fixing has to happen somewhere.
+        async function importRecipePhoto(input) {
+            const file = (input.files || [])[0];
+            input.value = '';
+            if (!file) return;
+
+            const status = document.getElementById('import-photo-status');
+            const button = document.getElementById('import-photo-btn');
+            button.disabled = true;
+            status.textContent = 'Reading the photo on the Pi - this takes a few seconds...';
+            status.classList.remove('hint-warn');
+
+            try {
+                const body = new FormData();
+                body.append('file', file);
+                const res = await fetch(`${API_BASE}/recipes/import-photo`, { method: 'POST', body });
+                const data = await res.json().catch(() => ({}));
+                if (!res.ok) throw new Error(data.error || 'Could not read that photo');
+                status.textContent = '';
+                fillRecipeForm(data);
+            } catch (err) {
+                status.textContent = err.message;
+                status.classList.add('hint-warn');
+            } finally {
+                button.disabled = false;
             }
         }
 
