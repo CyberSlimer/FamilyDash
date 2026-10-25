@@ -1329,7 +1329,8 @@
                 <h2 class="card-title">Where do I find my feed URL?</h2>
                 <ul class="help-list">
                     <li><strong>Google Calendar</strong> — Settings → choose calendar → <em>Integrate calendar</em> → <em>Secret address in iCal format</em>. Type: <code>ICS</code>.</li>
-                    <li><strong>iCloud</strong> — Type <code>CalDAV</code>, URL <code>https://caldav.icloud.com</code>, your Apple ID and an <a href="https://support.apple.com/en-us/102654" target="_blank" rel="noopener">app-specific password</a>.</li>
+                    <li><strong>iCloud, no password</strong> — on <a href="https://www.icloud.com/calendar" target="_blank" rel="noopener">icloud.com/calendar</a> (not the Calendar app) share a calendar, tick <em>Public Calendar</em>, copy the <code>webcal://</code> link and paste it as <code>ICS</code>. One calendar per link, and anyone holding the link can read it.</li>
+                    <li><strong>iCloud, private</strong> — Type <code>CalDAV</code>, URL <code>https://caldav.icloud.com</code>, your Apple ID and an <a href="https://support.apple.com/en-us/102654" target="_blank" rel="noopener">app-specific password</a>. Sees every calendar on the account; press <strong>Test</strong> to pick which ones.</li>
                     <li><strong>Outlook / Office 365</strong> — Settings → Calendar → <em>Shared calendars</em> → Publish → copy the <em>ICS</em> link.</li>
                     <li>Any <code>webcal://</code> subscribe link works as <code>ICS</code>.</li>
                 </ul>
@@ -1567,6 +1568,12 @@
             <div class="modal-header" id="calendar-modal-title">Add Calendar</div>
             <form id="calendar-form" onsubmit="saveCalendar(event)">
                 <input type="hidden" id="calendar-id">
+                <div class="quick-picks" id="calendar-presets">
+                    <button type="button" class="chip" onclick="applyCalendarPreset('icloud')">🍎 iCloud</button>
+                    <button type="button" class="chip" onclick="applyCalendarPreset('icloud-public')">🔗 iCloud public link</button>
+                    <button type="button" class="chip" onclick="applyCalendarPreset('google')">📅 Google</button>
+                    <button type="button" class="chip" onclick="applyCalendarPreset('outlook')">📧 Outlook</button>
+                </div>
                 <div class="form-group">
                     <label class="form-label">Name*</label>
                     <input type="text" class="form-input" id="calendar-name" placeholder="e.g., Family, School, Work" required>
@@ -4098,6 +4105,56 @@
             renderSwatches(color);
         }
 
+        // Each preset fills in everything that is the same for every account of
+        // that kind, so the only things left to type are the parts that are
+        // genuinely yours. iCloud gets two entries because it has two routes in:
+        // CalDAV needs an app-specific password but sees every calendar, while a
+        // public share link needs no password at all but covers one calendar and
+        // is readable by anyone who has the link.
+        const CALENDAR_PRESETS = {
+            'icloud': {
+                name: 'iCloud', type: 'caldav', url: 'https://caldav.icloud.com',
+                focus: 'calendar-username',
+                note: 'Your Apple ID below, and an <strong>app-specific password</strong> — not your Apple ID password. ' +
+                      'Make one at <a href="https://account.apple.com" target="_blank" rel="noopener">account.apple.com</a> ' +
+                      '→ Sign-In and Security → App-Specific Passwords. Two-factor authentication has to be on.',
+            },
+            'icloud-public': {
+                name: 'iCloud', type: 'ics', url: '',
+                focus: 'calendar-url',
+                note: 'No password needed. On <a href="https://www.icloud.com/calendar" target="_blank" rel="noopener">icloud.com/calendar</a> ' +
+                      '(not the Calendar app) tap the share icon beside a calendar, turn on <em>Public Calendar</em>, and copy the link. ' +
+                      'Paste it here as-is — <code>webcal://</code> is fine. Anyone who has that link can read the calendar.',
+            },
+            'google': {
+                name: 'Google', type: 'ics', url: '',
+                focus: 'calendar-url',
+                note: 'Google Calendar → Settings → pick the calendar → <em>Integrate calendar</em> → ' +
+                      '<em>Secret address in iCal format</em>. Keep that link private.',
+            },
+            'outlook': {
+                name: 'Outlook', type: 'ics', url: '',
+                focus: 'calendar-url',
+                note: 'Outlook → Settings → Calendar → <em>Shared calendars</em> → publish the calendar, ' +
+                      'then copy the <strong>ICS</strong> link (not the HTML one).',
+            },
+        };
+
+        function applyCalendarPreset(kind) {
+            const preset = CALENDAR_PRESETS[kind];
+            if (!preset) return;
+            const nameField = document.getElementById('calendar-name');
+            // Never clobber a name already typed - the preset's is only a start.
+            if (!nameField.value.trim()) nameField.value = preset.name;
+            document.getElementById('calendar-type').value = preset.type;
+            document.getElementById('calendar-url').value = preset.url;
+            updateCalendarTypeFields();
+            // Set after updateCalendarTypeFields, which writes its own generic hint.
+            document.getElementById('calendar-url-hint').innerHTML = preset.note;
+            const focus = document.getElementById(preset.focus);
+            if (focus) focus.focus();
+        }
+
         function updateCalendarTypeFields() {
             const type = document.getElementById('calendar-type').value;
             const isCaldav = type === 'caldav';
@@ -4139,6 +4196,9 @@
             document.getElementById('calendar-test-result').innerHTML = '';
             document.getElementById('calendar-test-result').className = 'test-result';
             document.getElementById('calendar-modal-title').textContent = cal ? 'Edit Calendar' : 'Add Calendar';
+            // A preset overwrites type and URL, which is the point when adding and
+            // vandalism when editing something that already works.
+            document.getElementById('calendar-presets').style.display = cal ? 'none' : '';
             document.getElementById('calendar-id').value = cal ? cal.id : '';
             document.getElementById('calendar-name').value = cal ? cal.name : '';
             document.getElementById('calendar-type').value = cal ? cal.type : 'ics';
@@ -4147,7 +4207,7 @@
             document.getElementById('calendar-password').value = '';
             document.getElementById('calendar-password-hint').textContent = cal && cal.has_password
                 ? (cal.password_ref ? `Currently using ${cal.password_ref} from config.env — leave blank to keep` : 'Saved — leave blank to keep the current password')
-                : 'For iCloud use an app-specific password, not your Apple ID password';
+                : 'iCloud: an app-specific password from account.apple.com, not your Apple ID password';
             document.getElementById('calendar-subcalendars').value = cal && cal.calendars ? cal.calendars.join(', ') : '';
             renderSubcalendarPicker(null, null);
             document.getElementById('calendar-enabled').checked = cal ? cal.enabled !== false : true;

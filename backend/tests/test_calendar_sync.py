@@ -29,6 +29,44 @@ class _QuietHandler(http.server.SimpleHTTPRequestHandler):
         pass
 
 
+class WebcalRewriteTests(unittest.TestCase):
+    """webcal:// is the only form iCloud gives out for a shared calendar."""
+
+    def _captured_url(self, url):
+        seen = {}
+
+        class _Response:
+            content = b'BEGIN:VCALENDAR\nVERSION:2.0\nEND:VCALENDAR\n'
+
+            def raise_for_status(self):
+                pass
+
+        def fake_get(requested, **kwargs):
+            seen['url'] = requested
+            return _Response()
+
+        original = calendar_sync.requests.get
+        calendar_sync.requests.get = fake_get
+        try:
+            calendar_sync.fetch_ics({'name': 'x', 'url': url, 'color': '#000', 'id': 'x'},
+                                    TZ, datetime.now(TZ), datetime.now(TZ) + timedelta(days=1))
+        finally:
+            calendar_sync.requests.get = original
+        return seen['url']
+
+    def test_webcal_scheme_is_rewritten_to_https(self):
+        # requests has no webcal handler, so without this the no-password
+        # iCloud route fails on an unsupported-scheme error.
+        self.assertEqual(self._captured_url('webcal://p1-caldav.icloud.com/published/2/ABC'),
+                         'https://p1-caldav.icloud.com/published/2/ABC')
+
+    def test_other_schemes_and_whitespace_are_left_alone(self):
+        self.assertEqual(self._captured_url('  https://example.com/a.ics  '),
+                         'https://example.com/a.ics')
+        self.assertEqual(self._captured_url('http://example.com/a.ics'),
+                         'http://example.com/a.ics')
+
+
 class CalendarSyncTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

@@ -97,6 +97,25 @@ class CalendarApiTests(unittest.TestCase):
         self.assertEqual([c['id'] for c in self.stored()], ['school-stuff-2'])
         self.assertEqual(self.client.delete('/api/calendar/calendars/nope').status_code, 404)
 
+    def test_webcal_url_is_accepted_and_stored_unchanged(self):
+        # iCloud's "Public Calendar" share hands out a webcal:// link and no
+        # other form of it, so the form has to take one. It is stored as the
+        # user pasted it; the scheme rewrite happens at fetch time (see
+        # test_calendar_sync.WebcalRewriteTests).
+        webcal = 'webcal://' + self.feed_url.split('://', 1)[1]
+        res = self.client.post('/api/calendar/calendars',
+                               json={'name': 'Public', 'type': 'ics', 'url': webcal})
+        self.assertEqual(res.status_code, 201, res.get_json())
+        self.assertEqual(self.stored()[0]['url'], webcal)
+
+    def test_webcal_type_is_normalised_to_ics(self):
+        # The type dropdown only offers ics and caldav, but someone editing
+        # calendars.json by hand may well write "webcal" to match their URL.
+        res = self.client.post('/api/calendar/calendars',
+                               json={'name': 'Hand Written', 'type': 'webcal', 'url': self.feed_url})
+        self.assertEqual(res.status_code, 201, res.get_json())
+        self.assertEqual(res.get_json()['type'], 'ics')
+
     def test_new_calendars_get_a_colour_nobody_else_is_using(self):
         # On the wall the colour is the only thing separating two calendars'
         # events, so a default must not land on one already in use.
