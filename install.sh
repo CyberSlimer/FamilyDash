@@ -127,8 +127,14 @@ cd "$APP_DIR"
 # ---------------------------------------------------------------------------
 echo -e "${GREEN}[5/$TOTAL] Setting up configuration...${NC}"
 if [ ! -f "$APP_DIR/config/calendars.json" ]; then
-    cp "$APP_DIR/config/calendars.example.json" "$APP_DIR/config/calendars.json"
-    echo -e "${YELLOW}Created config/calendars.json from the example - edit it with your calendar URLs${NC}"
+    # Deliberately empty, not a copy of calendars.example.json. Seeding the
+    # example gave a new install three calendars whose URLs still read YOUR_ID:
+    # the wall then reported them as failing and the app's Calendars tab opened
+    # on three broken entries nobody had created. An empty list lets the tab
+    # show its "add your first feed" state instead. The example file stays as
+    # documentation for anyone who would rather write the JSON by hand.
+    echo '{"calendars": []}' > "$APP_DIR/config/calendars.json"
+    echo "Created an empty config/calendars.json - add feeds from the app's Calendars tab"
 else
     echo "config/calendars.json already exists - left alone"
 fi
@@ -278,8 +284,9 @@ echo "  - Connect button between GPIO 17 and Ground"
 echo "  - Connect PIR sensor VCC to 5V, GND to Ground, OUT to GPIO 27"
 echo ""
 echo "Next steps:"
-echo "  1. Edit config/calendars.json with your calendar feeds (see README - Calendar Setup)"
-echo "     then: sudo systemctl restart dashboard-backend"
+echo "  1. Open the mobile interface and add your calendars on the Calendars tab."
+echo "     Nothing to restart - saving a calendar re-syncs straight away."
+echo "     (config/calendars.json still works if you prefer editing it by hand.)"
 echo "  2. Access the mobile interface to add recipes"
 echo "  3. Plan your meals for the week"
 echo "  4. Generate your grocery list"

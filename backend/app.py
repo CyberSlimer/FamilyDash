@@ -1109,6 +1109,20 @@ def _slugify(text):
     slug = re.sub(r'[^a-z0-9]+', '-', (text or '').lower()).strip('-')
     return slug or 'calendar'
 
+def _next_free_color(entries):
+    """A default colour no existing calendar is already using.
+
+    Indexing DEFAULT_COLORS by position handed the fourth calendar the same
+    red a second one had picked explicitly, and on the wall the colour is the
+    only thing telling two calendars' events apart.
+    """
+    taken = {str(e.get('color', '')).lower() for e in entries}
+    for color in DEFAULT_COLORS:
+        if color.lower() not in taken:
+            return color
+    # More calendars than colours: fall back to cycling rather than failing.
+    return DEFAULT_COLORS[len(entries) % len(DEFAULT_COLORS)]
+
 def _unique_calendar_id(name, existing_ids):
     base = _slugify(name)
     candidate, n = base, 2
@@ -1199,6 +1213,7 @@ def add_calendar():
         return jsonify({'error': error}), 400
     entries = read_raw_config(calendar_sync.config_path)
     entry['id'] = _unique_calendar_id(entry['name'], {e.get('id') for e in entries})
+    entry.setdefault('color', _next_free_color(entries))
     entries.append(entry)
     _apply_calendar_config(entries)
     return jsonify(_public_calendar(entry, len(entries) - 1, {})), 201

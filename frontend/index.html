@@ -1310,7 +1310,7 @@
                 // Sync problems banner
                 if (status) {
                     if (!status.enabled) {
-                        html += '<div class="calendar-notice">No calendars configured — copy <code>config/calendars.example.json</code> to <code>calendars.json</code></div>';
+                        html += '<div class="calendar-notice">No calendars yet — add one on the Calendars tab of the phone app</div>';
                     } else {
                         const failed = status.calendars.filter(c => c.ok === false);
                         if (failed.length) {

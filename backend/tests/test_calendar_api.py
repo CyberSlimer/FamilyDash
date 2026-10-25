@@ -97,6 +97,25 @@ class CalendarApiTests(unittest.TestCase):
         self.assertEqual([c['id'] for c in self.stored()], ['school-stuff-2'])
         self.assertEqual(self.client.delete('/api/calendar/calendars/nope').status_code, 404)
 
+    def test_new_calendars_get_a_colour_nobody_else_is_using(self):
+        # On the wall the colour is the only thing separating two calendars'
+        # events, so a default must not land on one already in use.
+        self.client.post('/api/calendar/calendars', json={
+            'name': 'Picked', 'type': 'ics', 'url': self.feed_url,
+            'color': dashboard.DEFAULT_COLORS[1]})
+        for name in ('A', 'B', 'C'):
+            self.client.post('/api/calendar/calendars',
+                             json={'name': name, 'type': 'ics', 'url': self.feed_url})
+        colors = [c['color'] for c in self.client.get('/api/calendar/calendars').get_json()]
+        self.assertEqual(len(set(colors)), len(colors), colors)
+        self.assertNotIn(dashboard.DEFAULT_COLORS[1], colors[1:])
+
+    def test_more_calendars_than_colours_still_saves(self):
+        for i in range(len(dashboard.DEFAULT_COLORS) + 2):
+            res = self.client.post('/api/calendar/calendars',
+                                   json={'name': f'Cal {i}', 'type': 'ics', 'url': self.feed_url})
+            self.assertEqual(res.status_code, 201, res.get_json())
+
     def test_validation(self):
         bad = [
             ({'type': 'ics', 'url': 'https://x'}, 'Name'),
