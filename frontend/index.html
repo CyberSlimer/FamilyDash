@@ -765,6 +765,13 @@
 
         .kitchen-part { min-height: 0; display: flex; flex-direction: column; }
 
+        /* A day card asks for 300px, which was right when the week owned the
+           whole screen. Sharing it with the list that overflows the row and
+           draws over the heading below, so inside this screen the cards size
+           themselves to the row they are given. */
+        .kitchen-split .meal-week { height: 100%; min-height: 0; }
+        .kitchen-split .meal-day { min-height: 0; overflow: hidden; }
+
         .kitchen-grocery { overflow: hidden; }
 
         .section-title {
