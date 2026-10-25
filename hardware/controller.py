@@ -112,6 +112,10 @@ LAST_MOTION = datetime.now()
 # leave the monitor powered and let the browser show photos instead of cutting
 # the backlight, so the idle display is a photo frame rather than a black rectangle.
 SCREENSAVER = {"enabled": False, "idle_seconds": MOTION_TIMEOUT}
+# Minutes of stillness before the panel powers down; 0 never sleeps. Comes
+# from the app so it can be changed from the sofa, falling back to
+# DISPLAY_OFF_AFTER for a Pi that cannot reach the backend on startup.
+DISPLAY_OFF_MINUTES = DISPLAY_OFF_AFTER / 60.0
 LAST_CONFIG_FETCH = None
 
 # The rotation last handed to the compositor. None means "not asked yet", so
@@ -168,7 +172,7 @@ def apply_rotation(value):
 
 def refresh_config():
     """Pull display settings from the backend; keep the last ones on failure."""
-    global SCREENSAVER, LAST_CONFIG_FETCH
+    global SCREENSAVER, LAST_CONFIG_FETCH, DISPLAY_OFF_MINUTES
     LAST_CONFIG_FETCH = datetime.now()
     try:
         res = requests.get(f"{DASHBOARD_URL}/api/display", timeout=5)
@@ -179,8 +183,12 @@ def refresh_config():
             "enabled": bool(saver.get("enabled")),
             "idle_seconds": int(saver.get("idle_seconds", MOTION_TIMEOUT)),
         }
+        DISPLAY_OFF_MINUTES = float(config.get("display_off_minutes",
+                                                 DISPLAY_OFF_MINUTES))
+        sleeps = (f"{DISPLAY_OFF_MINUTES:.0f}min" if DISPLAY_OFF_MINUTES > 0
+                  else "never")
         print(f"Display config: screensaver={'on' if SCREENSAVER['enabled'] else 'off'}"
-              f" idle={SCREENSAVER['idle_seconds']}s")
+              f" idle={SCREENSAVER['idle_seconds']}s sleep={sleeps}")
         apply_rotation(str(config.get("screen_rotation") or "normal"))
     except Exception as e:
         print(f"Could not read display config ({e}); keeping current settings")
@@ -516,14 +524,16 @@ def check_motion():
         if DISPLAY_ON:
             idle_time = (datetime.now() - LAST_MOTION).total_seconds()
             if SCREENSAVER["enabled"]:
-                # The photo screensaver is the idle state; the monitor only
-                # powers down after DISPLAY_OFF_AFTER, to save the panel
-                # overnight rather than in the middle of the afternoon.
-                if idle_time > max(DISPLAY_OFF_AFTER,
-                                   SCREENSAVER["idle_seconds"]):
+                # With the screensaver on, photos are the idle state and the
+                # panel only powers down after the longer sleep delay. The max
+                # keeps the two in order: sleeping before the screensaver has
+                # even started would make the screensaver setting pointless.
+                if DISPLAY_OFF_MINUTES > 0 and idle_time > max(
+                        DISPLAY_OFF_MINUTES * 60, SCREENSAVER["idle_seconds"]):
                     print(f"No motion for {int(idle_time)}s - turning off display")
                     turn_display_off()
-            elif idle_time > MOTION_TIMEOUT:
+            elif DISPLAY_OFF_MINUTES > 0 and idle_time > min(
+                    MOTION_TIMEOUT, DISPLAY_OFF_MINUTES * 60):
                 print(f"No motion for {int(idle_time)}s - turning off display")
                 turn_display_off()
 

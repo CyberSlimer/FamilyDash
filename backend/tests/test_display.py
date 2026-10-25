@@ -60,7 +60,7 @@ class ConfigTests(DisplayTestCase):
     def test_defaults_are_served_before_anything_is_saved(self):
         data = self.client.get('/api/display').get_json()
         self.assertEqual(data['config']['rotation_interval'], 30)
-        self.assertEqual(len(data['config']['screens']), 5)
+        self.assertEqual(len(data['config']['screens']), len(dashboard.SCREEN_TYPES))
         self.assertIn('photos', data['screen_types'])
 
     def test_round_trip(self):
@@ -131,7 +131,7 @@ class ConfigTests(DisplayTestCase):
     def test_omitted_screens_are_kept(self):
         # A client that only knows about 2 screens must not delete the others.
         self.put_config(screens=[{'id': 'calendar'}, {'id': 'meals'}])
-        self.assertEqual(len(self.get_config()['screens']), 5)
+        self.assertEqual(len(self.get_config()['screens']), len(dashboard.SCREEN_TYPES))
 
     def test_duplicate_screen_ids_collapse(self):
         self.put_config(screens=[{'id': 'calendar'}, {'id': 'calendar'}])
@@ -217,6 +217,57 @@ class DisplayFormWiringTests(unittest.TestCase):
     def test_the_rotation_control_is_wired(self):
         self.assertIn('display-screen-rotation', self.listed_inputs())
         self.assertIn('display-screen-rotation', self.read_by_collect_display())
+
+
+class SleepDelayTests(DisplayTestCase):
+    """Minutes of stillness before the panel itself powers down."""
+
+    def put_minutes(self, value):
+        config = self.client.get('/api/display').get_json()['config']
+        config['display_off_minutes'] = value
+        return self.client.put('/api/display', json=config)\
+            .get_json()['config']['display_off_minutes']
+
+    def test_a_sensible_value_round_trips(self):
+        self.assertEqual(self.put_minutes(20), 20)
+        self.assertEqual(self.put_minutes(240), 240)
+
+    def test_zero_means_never_sleep(self):
+        self.assertEqual(self.put_minutes(0), 0)
+        self.assertEqual(self.put_minutes(-5), 0)
+
+    def test_too_short_is_floored_rather_than_obeyed(self):
+        # Under about five minutes a quiet dinner would black out the wall.
+        self.assertEqual(self.put_minutes(2), 5)
+
+    def test_nonsense_falls_back_instead_of_crashing(self):
+        self.assertEqual(self.put_minutes('soon'), 240)
+
+    def test_the_default_is_long_because_a_wall_may_have_no_sensor(self):
+        # Nothing can turn the screen back on without one, so a short
+        # default would strand it dark.
+        config = self.client.get('/api/display').get_json()['config']
+        self.assertGreaterEqual(dashboard.DEFAULT_DISPLAY['display_off_minutes'], 60)
+        self.assertIn('display_off_minutes', config)
+
+
+class MergedKitchenScreenTests(DisplayTestCase):
+    """Meals and the shopping it implies are one screen now."""
+
+    def test_grocery_is_no_longer_a_screen_of_its_own(self):
+        self.assertNotIn('grocery', dashboard.SCREEN_TYPES)
+        self.assertEqual(dashboard.SCREEN_TYPES['meals'], 'Meals & Grocery')
+
+    def test_a_stored_config_still_naming_grocery_is_not_an_error(self):
+        # Every Pi upgrading to this has grocery in its saved config.
+        saved = self.client.put('/api/display', json={'screens': [
+            {'id': 'grocery', 'enabled': True},
+            {'id': 'meals', 'enabled': True},
+        ]})
+        self.assertEqual(saved.status_code, 200)
+        ids = [s['id'] for s in saved.get_json()['config']['screens']]
+        self.assertNotIn('grocery', ids)
+        self.assertIn('meals', ids)
 
 
 class ScreenRotationTests(DisplayTestCase):

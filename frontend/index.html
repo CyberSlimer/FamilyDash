@@ -748,6 +748,28 @@
             font-weight: 300;
             opacity: 0.85;
         }
+        /* The week sizes to its content; the list takes the rest and scrolls
+           nothing - a wall nobody can scroll should simply show less. */
+        .kitchen-split {
+            display: grid;
+            grid-template-rows: auto minmax(0, 1fr);
+            gap: 26px;
+            height: 100%;
+            min-height: 0;
+        }
+
+        .kitchen-part { min-height: 0; display: flex; flex-direction: column; }
+
+        .kitchen-grocery { overflow: hidden; }
+
+        .section-title {
+            font-size: 1.5em;
+            font-weight: 600;
+            opacity: 0.75;
+            margin-bottom: 12px;
+            letter-spacing: 0.02em;
+        }
+
         /* ============================================ */
         /* PORTRAIT                                     */
         /* ============================================ */
@@ -816,32 +838,28 @@
     <!-- Screen 2: Meal Plan -->
     <div class="screen" id="screen-1" data-screen-id="meals">
         <div class="header">
-            <h1>🍽️ This Week's Meals</h1>
+            <h1>🍽️ Meals &amp; Grocery</h1>
             <div class="datetime">
                 <div class="time" id="time-1">--:--</div>
                 <div class="date" id="date-1">Loading...</div>
             </div>
         </div>
-        <div class="content">
-            <div class="meal-week" id="meal-week">
-                <div class="loading"></div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Screen 3: Grocery List -->
-    <div class="screen" id="screen-2" data-screen-id="grocery">
-        <div class="header">
-            <h1>🛒 Grocery List</h1>
-            <div class="datetime">
-                <div class="time" id="time-2">--:--</div>
-                <div class="date" id="date-2">Loading...</div>
-            </div>
-        </div>
-        <div class="content">
-            <div class="grocery-columns" id="grocery-list">
-                <div class="loading"></div>
-            </div>
+        <!-- What you are eating this week and what you have to buy for it are
+             one thought, so they are one screen: the week across the top, the
+             list filling whatever is left. -->
+        <div class="content kitchen-split">
+            <section class="kitchen-part">
+                <h2 class="section-title">This Week</h2>
+                <div class="meal-week" id="meal-week">
+                    <div class="loading"></div>
+                </div>
+            </section>
+            <section class="kitchen-part kitchen-grocery">
+                <h2 class="section-title">🛒 Grocery List</h2>
+                <div class="grocery-columns" id="grocery-list">
+                    <div class="loading"></div>
+                </div>
+            </section>
         </div>
     </div>
 

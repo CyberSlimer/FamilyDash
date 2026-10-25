@@ -1349,8 +1349,11 @@ app.config['MAX_CONTENT_LENGTH'] = 30 * 1024 * 1024   # per-request upload cap
 # not invent new ones.
 SCREEN_TYPES = {
     'calendar': 'Calendar & Weather',
-    'meals': 'Meal Plan',
-    'grocery': 'Grocery List',
+    # The week's meals and the shopping that follows from them were two
+    # screens you had to hold in your head at once. One screen, meals above
+    # and the list below. A stored config still naming 'grocery' simply
+    # drops it, which _validate_display already does for unknown ids.
+    'meals': 'Meals & Grocery',
     'recipes': 'Recipes & Pantry',
     'photos': 'Photos',
 }
@@ -1387,11 +1390,15 @@ DEFAULT_DISPLAY = {
     'screens': [
         {'id': 'calendar', 'enabled': True, 'duration': None},
         {'id': 'meals', 'enabled': True, 'duration': None},
-        {'id': 'grocery', 'enabled': True, 'duration': None},
         {'id': 'recipes', 'enabled': True, 'duration': None},
         {'id': 'photos', 'enabled': False, 'duration': 60,
          'options': {'interval': 8, 'shuffle': True, 'captions': True}},
     ],
+    # Minutes of no motion before the panel itself powers down. 0 never
+    # sleeps. The default is deliberately long: with no motion sensor fitted
+    # nothing can turn the screen back on, so a short value strands the wall
+    # dark. Twenty minutes is right once a sensor is watching the room.
+    'display_off_minutes': 240,
     'screensaver': {
         'enabled': False,
         'idle_seconds': 300,
@@ -1434,6 +1441,17 @@ def _validate_display(incoming):
     rotation = str(incoming.get('screen_rotation', base['screen_rotation'])).strip()
     if rotation in SCREEN_ROTATIONS:
         base['screen_rotation'] = rotation
+    try:
+        off_minutes = int(incoming.get('display_off_minutes',
+                                       base['display_off_minutes']))
+    except (TypeError, ValueError):
+        off_minutes = base['display_off_minutes']
+    # Below about five minutes a quiet dinner would turn the wall off, so a
+    # positive value is floored there; 0 and anything negative mean never.
+    base['display_off_minutes'] = (
+        0 if off_minutes <= 0
+        else int(_clamp(off_minutes, 5, 1440, base['display_off_minutes'])))
+
     base['clock_24h'] = bool(incoming.get('clock_24h', base['clock_24h']))
     base['show_indicators'] = bool(incoming.get('show_indicators', base['show_indicators']))
     base['home_focus'] = bool(incoming.get('home_focus', base['home_focus']))
