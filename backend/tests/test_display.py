@@ -177,6 +177,36 @@ class ConfigTests(DisplayTestCase):
         self.assertEqual(self.get_config()['rotation_interval'], 30)
 
 
+class PhotoScreenOptionTests(DisplayTestCase):
+    """The Photos tab is the only place these three are editable."""
+
+    def test_photo_screen_options_round_trip(self):
+        config = self.client.get('/api/display').get_json()['config']
+        screens = config['screens']
+        for screen in screens:
+            if screen['id'] == 'photos':
+                screen['options'] = {'interval': 20, 'shuffle': False, 'captions': False}
+        saved = self.client.put('/api/display', json={**config, 'screens': screens})
+        self.assertEqual(saved.status_code, 200)
+        opts = next(s for s in saved.get_json()['config']['screens']
+                    if s['id'] == 'photos')['options']
+        self.assertEqual(opts, {'interval': 20, 'shuffle': False, 'captions': False})
+
+    def test_saving_from_the_photos_tab_leaves_the_theme_alone(self):
+        # The Photos tab shares the display config, so it PUTs the whole thing.
+        # If it ever sent a half-filled form the theme would be flattened back
+        # to the defaults, which is a nasty way to lose a colour scheme.
+        config = self.client.get('/api/display').get_json()['config']
+        config['theme']['primary'] = '#123456'
+        self.client.put('/api/display', json=config)
+
+        config = self.client.get('/api/display').get_json()['config']
+        config['screensaver']['interval'] = 12
+        after = self.client.put('/api/display', json=config).get_json()['config']
+        self.assertEqual(after['theme']['primary'], '#123456')
+        self.assertEqual(after['screensaver']['interval'], 12)
+
+
 class PhotoTests(DisplayTestCase):
     def upload(self, name='pic.png', data=None):
         return self.client.post(

@@ -1127,6 +1127,11 @@
 
         let saverVisible = false;
 
+        // Set when the phone asks for photos on demand. checkIdle would
+        // otherwise pull them straight back down whenever the screensaver
+        // setting is off, which is exactly when someone wants a look.
+        let forcedSaver = false;
+
         function showScreensaver() {
             if (saverVisible || !PHOTOS.length) return;
             saverVisible = true;
@@ -1138,6 +1143,7 @@
         }
 
         function hideScreensaver() {
+            forcedSaver = false;
             if (!saverVisible) return;
             saverVisible = false;
             document.getElementById('screensaver').classList.remove('showing');
@@ -1147,10 +1153,11 @@
 
         function checkIdle() {
             const saver = CONFIG.screensaver || {};
-            if (!saver.enabled || !PHOTOS.length) {
+            if ((!saver.enabled && !forcedSaver) || !PHOTOS.length) {
                 if (saverVisible) hideScreensaver();
                 return;
             }
+            if (forcedSaver) return;
             const idleSeconds = (Date.now() - lastInteraction) / 1000;
             if (idleSeconds >= (saver.idle_seconds || 300)) showScreensaver();
         }
@@ -1707,6 +1714,13 @@
                     if (Number.isInteger(cmd.index)) showIndex(cmd.index);
                     break;
                 case 'wake':    break;  // noteInteraction above is the whole job
+                // Photos on demand, so a new upload can be checked from the
+                // sofa. hideScreensaver above cleared forcedSaver, so set it
+                // after, not before.
+                case 'saver':
+                    forcedSaver = true;
+                    showScreensaver();
+                    break;
             }
         }
 

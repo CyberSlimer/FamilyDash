@@ -299,7 +299,10 @@ import time
 MOTION_PIN = 27
 
 GPIO.setmode(GPIO.BCM)
-GPIO.setup(MOTION_PIN, GPIO.IN)
+# Pull-down, so a pin with no sensor on it reads LOW instead of floating HIGH.
+# Without this the test prints "MOTION DETECTED!" forever whether or not
+# anything is wired up, which proves nothing. The service does the same.
+GPIO.setup(MOTION_PIN, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
 
 print("Testing PIR sensor on GPIO 27...")
 print("Wave hand in front of sensor (Ctrl+C to exit)")
@@ -324,10 +327,28 @@ EOF
 - Motion detected: "✓ MOTION DETECTED!" appears
 - LED on sensor lights up when motion detected
 
+**Expected with no sensor connected:** "No motion", continuously. If an
+unconnected GPIO 27 reports motion, the pull-down above is missing.
+
 **Troubleshooting:**
 - Always detects motion: Turn sensitivity down, check for heat sources
 - Never detects motion: Check wiring, ensure jumper in L position
 - Sensor not powered: Check 5V connection, ensure VCC connected
+- Motion for the first minute after power-on: normal. The module settles for
+  about a minute, which is why `MOTION_WARMUP` ignores the pin until then.
+
+### What the dashboard does with it
+
+The sensor is optional, and the only thing it changes is who can wake the wall:
+
+| | Screensaver starts | Dashboard comes back |
+|---|---|---|
+| No sensor | on the idle timer | phone's Photos tab, or a working button |
+| Sensor fitted | on the idle timer | automatically, when someone walks up |
+
+Set `MOTION_PIN=off` in `config.env` to stop looking for one. The service also
+gives up on a pin that reads high for six hours without a break, since that is
+wiring, not a room - look for OUT landing on 3.3V instead of the GPIO.
 
 ## 🔒 Safety Guidelines
 

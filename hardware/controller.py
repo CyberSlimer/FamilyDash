@@ -70,6 +70,19 @@ MOTION_TIMEOUT = int(os.environ.get("MOTION_TIMEOUT", 300))  # display off after
 CHECK_INTERVAL = 1  # Check sensors every second
 CONFIG_POLL_SECONDS = 30  # how often to re-read the display config
 
+# A PIR's output means nothing until its charge pump settles - most modules sit
+# high for the first minute after power-on - so the pin is ignored until then.
+MOTION_WARMUP = float(os.environ.get("MOTION_WARMUP", 60))
+
+# With a pull-down fitted, a pin that never once goes low is not watching a
+# room: it is wired to power, or the sensor has failed. Someone cooking holds a
+# PIR high for an hour, so the threshold has to be far longer than any plausible
+# visit before we stop believing the sensor.
+MOTION_STUCK_SECONDS = float(os.environ.get("MOTION_STUCK_SECONDS", 6 * 3600))
+MOTION_READY = False
+MOTION_HIGH_SINCE = None
+STARTED_AT = datetime.now()
+
 # Display control
 DISPLAY_ON = True
 LAST_MOTION = datetime.now()
@@ -128,7 +141,7 @@ def button_rests_high():
 
 def setup_gpio():
     """Initialize GPIO pins"""
-    global BUTTON_READY
+    global BUTTON_READY, MOTION_READY
 
     GPIO.setmode(GPIO.BCM)
     GPIO.setwarnings(False)
@@ -149,8 +162,14 @@ def setup_gpio():
         print("Motion: off - the display stays on and the screensaver runs on its "
               "own idle timer")
     else:
-        GPIO.setup(MOTION_PIN, GPIO.IN)
-        print(f"Motion: GPIO {MOTION_PIN}")
+        # Pull-down, so a pin with nothing on it reads LOW - "nobody here" -
+        # rather than floating HIGH and reporting motion forever. A PIR drives
+        # its output hard enough to win against the internal resistor, so this
+        # costs nothing once a real sensor is fitted.
+        GPIO.setup(MOTION_PIN, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+        MOTION_READY = True
+        print(f"Motion: GPIO {MOTION_PIN} - ignoring the pin for its first "
+              f"{int(MOTION_WARMUP)}s while a PIR settles")
 
 # ============================================================================
 # DISPLAY CONTROL
@@ -339,15 +358,37 @@ def wake_browser():
 
 def check_motion():
     """Check motion sensor and control display"""
-    global LAST_MOTION, DISPLAY_ON
+    global LAST_MOTION, DISPLAY_ON, MOTION_READY, MOTION_HIGH_SINCE
 
-    if MOTION_PIN is None:
-        # With no sensor, an unwired pin floats and would read as constant
-        # motion, which would keep the screensaver from ever appearing. Leave
-        # the display on and let the browser's own idle timer do the work.
+    if MOTION_PIN is None or not MOTION_READY:
+        # With no sensor the display stays on and the browser's own idle timer
+        # runs the screensaver; it then takes the phone, or a press of a
+        # working button, to bring the dashboard back.
         return
 
-    if GPIO.input(MOTION_PIN):
+    now = datetime.now()
+    if (now - STARTED_AT).total_seconds() < MOTION_WARMUP:
+        # Treat the warm-up as "someone is here" rather than reading a settling
+        # sensor as either presence or absence.
+        LAST_MOTION = now
+        return
+
+    detected = bool(GPIO.input(MOTION_PIN))
+
+    if not detected:
+        MOTION_HIGH_SINCE = None
+    elif MOTION_HIGH_SINCE is None:
+        MOTION_HIGH_SINCE = now
+    elif (now - MOTION_HIGH_SINCE).total_seconds() > MOTION_STUCK_SECONDS:
+        MOTION_READY = False
+        print(f"Motion: GPIO {MOTION_PIN} has read high for "
+              f"{int(MOTION_STUCK_SECONDS / 3600)}h without once going low, which no "
+              "room does, so the sensor is being ignored - check that its OUT pin "
+              "goes to the GPIO and not to 3.3V, or set MOTION_PIN=off in "
+              "config.env. The screensaver still runs on its own idle timer.")
+        return
+
+    if detected:
         # Motion detected
         if not DISPLAY_ON:
             print("Motion detected - waking display")
@@ -359,7 +400,7 @@ def check_motion():
             if idle_time >= SCREENSAVER["idle_seconds"]:
                 print("Motion detected - waking the dashboard from the screensaver")
                 wake_browser()
-        LAST_MOTION = datetime.now()
+        LAST_MOTION = now
     else:
         # No motion
         if DISPLAY_ON:
@@ -401,8 +442,10 @@ def main():
         print("- Press button to advance screens")
     else:
         print("- No working button; advance screens from the phone's Display tab")
-    if MOTION_PIN is not None:
+    if MOTION_READY:
         print("- Motion sensor will wake display")
+    else:
+        print("- No motion sensor; the screensaver clears from the phone's Photos tab")
     print("- Display settings are read from the app every "
           f"{CONFIG_POLL_SECONDS}s")
     print("- Press Ctrl+C to exit")

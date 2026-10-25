@@ -1502,7 +1502,7 @@ def reset_display_config():
 # Held in memory rather than in the settings table: a button press is
 # ephemeral, it should not survive a restart, and persisting it would mean a
 # database write per press and a database read every second from the poll.
-DISPLAY_COMMANDS = ('next', 'prev', 'refresh', 'reload', 'wake', 'screen')
+DISPLAY_COMMANDS = ('next', 'prev', 'refresh', 'reload', 'wake', 'screen', 'saver')
 
 _display_command = {'seq': 0, 'action': None, 'index': None}
 _display_command_lock = threading.Lock()

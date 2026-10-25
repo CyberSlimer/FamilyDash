@@ -982,6 +982,7 @@
             gap: 10px;
         }
         .photo-tile { position: relative; }
+        .photo-frame { position: relative; display: block; }
         .photo-tile img {
             width: 100%;
             aspect-ratio: 1;
@@ -990,7 +991,7 @@
             display: block;
             background: rgba(0, 0, 0, 0.06);
         }
-        .photo-tile .photo-remove {
+        .photo-frame .photo-remove {
             position: absolute;
             top: 4px;
             right: 4px;
@@ -1003,6 +1004,28 @@
             font-size: 0.85em;
             cursor: pointer;
         }
+        .photo-order {
+            position: absolute;
+            bottom: 4px;
+            left: 4px;
+            right: 4px;
+            display: flex;
+            justify-content: space-between;
+            /* The arrows sit over the picture, so they carry their own contrast
+               rather than borrowing the page's. */
+            opacity: 0.85;
+        }
+        .photo-order button {
+            background: rgba(0, 0, 0, 0.6);
+            color: #fff;
+            border: none;
+            border-radius: 7px;
+            width: 30px;
+            height: 26px;
+            font-size: 0.8em;
+            cursor: pointer;
+        }
+        .photo-order button:disabled { opacity: 0.25; cursor: default; }
         .photo-tile .photo-cap {
             width: 100%;
             margin-top: 4px;
@@ -1036,6 +1059,7 @@
             <button class="tab" onclick="switchTab('pantry')">🏪 Pantry</button>
             <button class="tab" onclick="switchTab('calendars')">📅 Calendars</button>
             <button class="tab" onclick="switchTab('display')">🖥️ Display</button>
+            <button class="tab" onclick="switchTab('photos')">🖼️ Photos</button>
         </div>
     </div>
 
@@ -1137,7 +1161,8 @@
                 </div>
                 <p class="modal-intro">Turn screens on or off, drag them into order with the
                    arrows, and set how long each one stays up. Blank duration uses the
-                   default below.</p>
+                   default below. The photo library and the screensaver have their own
+                   🖼️ Photos tab.</p>
                 <div id="screen-rows"></div>
             </div>
 
@@ -1197,11 +1222,15 @@
                 </div>
                 <button class="btn btn-secondary btn-small" onclick="resetDisplay()">Reset to defaults</button>
             </div>
+        </div>
 
+        <!-- PHOTOS TAB -->
+        <div id="photos-tab" class="tab-content">
             <div class="card">
-                <h2 class="card-title">Photos</h2>
-                <p class="modal-intro">Photos show on the Photos screen and as the screensaver
-                   when the dashboard has been idle.</p>
+                <div class="card-header">
+                    <h2 class="card-title">Photo library</h2>
+                    <span class="upload-hint" id="photo-count"></span>
+                </div>
                 <div class="upload-row">
                     <input type="file" id="photo-input" accept="image/*" multiple
                            onchange="uploadPhotos(this)" style="display:none">
@@ -1213,7 +1242,12 @@
             </div>
 
             <div class="card">
-                <h2 class="card-title">Screensaver</h2>
+                <div class="card-header">
+                    <h2 class="card-title">Screensaver</h2>
+                    <span class="display-saved" id="photos-saved">Saved ✓</span>
+                </div>
+                <p class="modal-intro">What the wall turns into once the dashboard has been
+                   sitting untouched.</p>
                 <label class="toggle-label">
                     <input type="checkbox" id="saver-enabled"> Show photos when nobody's around
                 </label>
@@ -1231,6 +1265,38 @@
                 <label class="toggle-label">
                     <input type="checkbox" id="saver-clock"> Show the clock
                 </label>
+                <div class="wall-remote-hint" id="saver-hint"></div>
+
+                <div class="wall-remote">
+                    <div class="wall-remote-label">Try it on the wall</div>
+                    <div class="wall-remote-row">
+                        <button class="btn btn-primary btn-small"
+                                onclick="wallCommand('saver', 'photos-wall-status')">Show photos now</button>
+                        <button class="btn btn-secondary btn-small"
+                                onclick="wallCommand('wake', 'photos-wall-status')">Back to the dashboard</button>
+                    </div>
+                    <div class="wall-remote-status" id="photos-wall-status"></div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Photos as a rotating screen</h2>
+                </div>
+                <p class="modal-intro">Separate from the screensaver: the photos can also take
+                   their own turn in the rotation, like the meal plan or the grocery list.
+                   Switch that on under 🖥️ Display → Screens.</p>
+                <div class="form-group">
+                    <label class="form-label">Seconds per photo</label>
+                    <input type="number" class="form-input" id="pscreen-interval" min="2" max="600">
+                </div>
+                <label class="toggle-label">
+                    <input type="checkbox" id="pscreen-shuffle"> Shuffle
+                </label>
+                <label class="toggle-label">
+                    <input type="checkbox" id="pscreen-captions"> Show captions
+                </label>
+                <div class="wall-remote-hint" id="pscreen-hint"></div>
             </div>
         </div>
 
@@ -2356,7 +2422,7 @@
 
         // Tabs with no case in showAddModal(): the button would do nothing and
         // on Display it sits on top of the settings.
-        const TABS_WITHOUT_ADD = ['meals', 'display'];
+        const TABS_WITHOUT_ADD = ['meals', 'display', 'photos'];
 
         function switchTab(tabName) {
             currentTab = tabName;
@@ -2396,6 +2462,9 @@
                     break;
                 case 'display':
                     loadDisplay();
+                    break;
+                case 'photos':
+                    loadPhotos();
                     break;
             }
         }
@@ -2808,6 +2877,7 @@
             'theme-primary', 'theme-secondary', 'theme-text', 'theme-accent',
             'theme-font', 'theme-scale', 'theme-opacity',
             'saver-enabled', 'saver-idle', 'saver-interval', 'saver-shuffle', 'saver-clock',
+            'pscreen-interval', 'pscreen-shuffle', 'pscreen-captions',
         ];
         let displayInputsBound = false;
 
@@ -2824,13 +2894,14 @@
             });
         }
 
-        async function loadDisplay() {
+        async function loadDisplay({ preview = true } = {}) {
             try {
                 const data = await (await fetch(`${API_BASE}/display`)).json();
                 displayConfig = data.config;
                 displayPhotos = data.photos || [];
                 renderDisplay();
                 bindDisplayInputs();
+                if (!preview) return;
                 previewNote();
                 if (!previewData) await loadPreviewData();
                 renderPreview();
@@ -2838,6 +2909,15 @@
             } catch (error) {
                 console.error('Error loading display settings:', error);
             }
+        }
+
+        // The Photos tab edits the same display config - the screensaver and the
+        // photo screen both live in it - so it loads the whole thing and renders
+        // the whole form. Populating only the screensaver fields would leave the
+        // colour wells empty, and the next save would write those blanks over
+        // the theme. The wall preview is the one part it can skip.
+        async function loadPhotos() {
+            await loadDisplay({ preview: false });
         }
 
         function homeFocusHint() {
@@ -2901,6 +2981,11 @@
             document.getElementById('saver-shuffle').checked = saver.shuffle !== false;
             document.getElementById('saver-clock').checked = saver.show_clock !== false;
 
+            const pscreen = photoScreenOptions();
+            document.getElementById('pscreen-interval').value = pscreen.interval;
+            document.getElementById('pscreen-shuffle').checked = pscreen.shuffle !== false;
+            document.getElementById('pscreen-captions').checked = pscreen.captions !== false;
+
             updateThemePreview();
             renderPhotos();
             renderPreview();
@@ -2935,7 +3020,15 @@
                     scale: parseFloat(document.getElementById('theme-scale').value),
                     card_opacity: parseFloat(document.getElementById('theme-opacity').value),
                 },
-                screens: c.screens,
+                // The photo screen's options are the only per-screen settings
+                // with a form of their own; the rest of the list passes through.
+                screens: c.screens.map(screen => screen.id === 'photos'
+                    ? { ...screen, options: {
+                            interval: parseInt(document.getElementById('pscreen-interval').value, 10) || 8,
+                            shuffle: document.getElementById('pscreen-shuffle').checked,
+                            captions: document.getElementById('pscreen-captions').checked,
+                        } }
+                    : screen),
                 screensaver: {
                     enabled: document.getElementById('saver-enabled').checked,
                     idle_seconds: (parseInt(document.getElementById('saver-idle').value, 10) || 5) * 60,
@@ -2946,9 +3039,47 @@
             };
         }
 
+        function photoScreenOptions() {
+            const screen = (displayConfig.screens || []).find(x => x.id === 'photos') || {};
+            return screen.options || { interval: 8, shuffle: true, captions: true };
+        }
+
+        // Says what the current settings actually mean, including the part that
+        // bites: with no sensor and no working button, nothing at the wall can
+        // dismiss the screensaver.
+        function saverHint() {
+            const hint = document.getElementById('saver-hint');
+            if (!hint) return;
+            const on = document.getElementById('saver-enabled').checked;
+            const minutes = parseInt(document.getElementById('saver-idle').value, 10) || 5;
+            if (!displayPhotos.length) {
+                hint.textContent = 'No photos yet, so the wall will carry on rotating through '
+                    + 'the screens whatever this is set to.';
+            } else if (!on) {
+                hint.textContent = 'Off: the wall rotates through its screens all day.';
+            } else {
+                hint.textContent = `After ${minutes} minute${minutes === 1 ? '' : 's'} untouched `
+                    + 'the wall becomes a photo frame. Unless a motion sensor is fitted, nothing '
+                    + 'at the wall itself will bring the dashboard back - use "Back to the '
+                    + 'dashboard" below.';
+            }
+        }
+
+        function photoScreenHint() {
+            const hint = document.getElementById('pscreen-hint');
+            if (!hint) return;
+            const screen = (displayConfig.screens || []).find(x => x.id === 'photos') || {};
+            hint.textContent = screen.enabled
+                ? 'On: the photos take a turn in the rotation.'
+                : 'Off: these only apply once the Photos screen is switched on in the '
+                  + 'Display tab. The screensaver above works either way.';
+        }
+
         function queueDisplaySave() {
             updateThemePreview();
             homeFocusHint();
+            saverHint();
+            photoScreenHint();
             renderPreview();
             clearTimeout(saveTimer);
             saveTimer = setTimeout(saveDisplay, 600);
@@ -2963,9 +3094,14 @@
                 });
                 const data = await res.json();
                 displayConfig = data.config;
-                const flag = document.getElementById('display-saved');
-                flag.classList.add('show');
-                setTimeout(() => flag.classList.remove('show'), 1500);
+                // Either tab can save, so flash both markers; only the one on
+                // screen is visible anyway.
+                ['display-saved', 'photos-saved'].forEach(id => {
+                    const flag = document.getElementById(id);
+                    if (!flag) return;
+                    flag.classList.add('show');
+                    setTimeout(() => flag.classList.remove('show'), 1500);
+                });
             } catch (error) {
                 console.error('Error saving display settings:', error);
             }
@@ -3011,19 +3147,67 @@
 
         function renderPhotos() {
             const grid = document.getElementById('photo-grid');
+            photoCount();
+            saverHint();
+            if (displayConfig) photoScreenHint();
             if (!displayPhotos.length) {
-                grid.innerHTML = '<div class="upload-hint">No photos yet.</div>';
+                grid.innerHTML = '<div class="upload-hint">No photos yet. Add a few and they '
+                    + 'become the screensaver.</div>';
                 return;
             }
-            grid.innerHTML = displayPhotos.map(photo => `
+            const last = displayPhotos.length - 1;
+            grid.innerHTML = displayPhotos.map((photo, i) => `
                 <div class="photo-tile">
-                    <img src="${photoSrc(photo)}" alt="${esc(photo.caption || '')}" loading="lazy">
-                    <button class="photo-remove" title="Remove"
-                            onclick="deletePhoto(${photo.id})">✕</button>
+                    <div class="photo-frame">
+                        <img src="${photoSrc(photo)}" alt="${esc(photo.caption || '')}" loading="lazy">
+                        <button class="photo-remove" title="Remove"
+                                onclick="deletePhoto(${photo.id})">✕</button>
+                        <div class="photo-order">
+                            <button title="Earlier" ${i === 0 ? 'disabled' : ''}
+                                    onclick="movePhoto(${photo.id}, -1)">‹</button>
+                            <button title="Later" ${i === last ? 'disabled' : ''}
+                                    onclick="movePhoto(${photo.id}, 1)">›</button>
+                        </div>
+                    </div>
                     <input class="photo-cap" placeholder="Caption" value="${esc(photo.caption || '')}"
                            onchange="setPhotoCaption(${photo.id}, this.value)">
                 </div>
             `).join('');
+        }
+
+        function photoCount() {
+            const el = document.getElementById('photo-count');
+            if (!el) return;
+            const n = displayPhotos.length;
+            if (!n) { el.textContent = ''; return; }
+            const bytes = displayPhotos.reduce((sum, p) => sum + (p.bytes || 0), 0);
+            const size = bytes > 1048576 ? `${(bytes / 1048576).toFixed(1)} MB`
+                                         : `${Math.round(bytes / 1024)} kB`;
+            el.textContent = `${n} photo${n === 1 ? '' : 's'}, ${size}`;
+        }
+
+        // The slideshow follows sort_order, so moving a tile is a whole-list
+        // reorder. The local array moves first and re-renders, because waiting
+        // on the Pi makes a tap feel broken.
+        async function movePhoto(id, delta) {
+            const from = displayPhotos.findIndex(p => p.id === id);
+            const to = from + delta;
+            if (from < 0 || to < 0 || to >= displayPhotos.length) return;
+            const [moved] = displayPhotos.splice(from, 1);
+            displayPhotos.splice(to, 0, moved);
+            renderPhotos();
+            renderPreview();
+            try {
+                await fetch(`${API_BASE}/photos/reorder`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ids: displayPhotos.map(p => p.id) })
+                });
+            } catch (error) {
+                // Put the list back rather than leave the phone showing an
+                // order the wall does not have.
+                await refreshPhotos();
+            }
         }
 
         function photoSrc(photo) {
@@ -3429,16 +3613,18 @@
         // which the button could not.
         // =============================================
 
-        let wallStatusTimer = null;
+        // Keyed by status element: the Display tab and the Photos tab each have one.
+        const wallStatusTimer = {};
 
-        function wallStatus(text, kind) {
-            const status = document.getElementById('wall-remote-status');
+        function wallStatus(text, kind, target) {
+            const id = target || 'wall-remote-status';
+            const status = document.getElementById(id);
             if (!status) return;
             status.textContent = text;
             status.className = 'wall-remote-status' + (kind ? ' ' + kind : '');
-            clearTimeout(wallStatusTimer);
+            clearTimeout(wallStatusTimer[id]);
             if (text) {
-                wallStatusTimer = setTimeout(() => wallStatus('', ''), 6000);
+                wallStatusTimer[id] = setTimeout(() => wallStatus('', '', id), 6000);
             }
         }
 
@@ -3454,10 +3640,16 @@
             }
         }
 
-        async function wallCommand(action) {
+        async function wallCommand(action, target) {
             if (API_BASE.replace(/\/api$/, '') === DEMO_SERVER) {
                 wallStatus('The demo server has no wall to drive. Connect to your '
-                           + 'own dashboard first.', 'warn');
+                           + 'own dashboard first.', 'warn', target);
+                return;
+            }
+            // The wall skips a screensaver with nothing in it, so don't claim
+            // otherwise.
+            if (action === 'saver' && !displayPhotos.length) {
+                wallStatus('Add a photo first - there is nothing to show yet.', 'warn', target);
                 return;
             }
 
@@ -3472,11 +3664,13 @@
                 sent = { next: 'Wall advanced a screen.',
                          prev: 'Wall stepped back a screen.',
                          refresh: 'Wall is reloading its data.',
-                         reload: 'Wall is reloading the page itself.' }[action]
+                         reload: 'Wall is reloading the page itself.',
+                         saver: 'Wall is showing your photos.',
+                         wake: 'Wall is back on the dashboard.' }[action]
                        || 'Sent to the wall.';
             }
 
-            wallStatus('Sending…', '');
+            wallStatus('Sending…', '', target);
             try {
                 const res = await fetch(`${API_BASE}/display/command`, {
                     method: 'POST',
@@ -3488,7 +3682,7 @@
                     throw new Error(data.error || `HTTP ${res.status}`);
                 }
             } catch (error) {
-                wallStatus(`Could not reach the dashboard: ${error.message}`, 'bad');
+                wallStatus(`Could not reach the dashboard: ${error.message}`, 'bad', target);
                 return;
             }
 
@@ -3496,12 +3690,12 @@
             // on it - the kiosk has to poll. Say which one we actually know.
             const silent = await kioskSilentFor();
             if (silent === null) {
-                wallStatus(sent + ' (Could not check whether the wall is awake.)', 'warn');
+                wallStatus(sent + ' (Could not check whether the wall is awake.)', 'warn', target);
             } else if (silent > 10) {
                 wallStatus(`Queued, but the wall has not checked in for ${Math.round(silent)}s, `
-                           + 'so it may be asleep or the browser may have died.', 'warn');
+                           + 'so it may be asleep or the browser may have died.', 'warn', target);
             } else {
-                wallStatus(sent, 'ok');
+                wallStatus(sent, 'ok', target);
             }
         }
 

@@ -95,6 +95,14 @@ class DisplayCommandTests(unittest.TestCase):
     def test_screen_with_a_non_numeric_index_is_rejected(self):
         self.assertEqual(self.post({'action': 'screen', 'index': 'two'}).status_code, 400)
 
+    def test_saver_and_wake_are_accepted(self):
+        # The phone's Photos tab uses these two to show the photos on demand and
+        # to put the dashboard back, which is the only way to clear the
+        # screensaver on a wall with no sensor and no working button.
+        for action in ('saver', 'wake'):
+            body = self.post({'action': action}).get_json()
+            self.assertEqual(body['action'], action)
+
     def test_unknown_action_is_rejected_and_lists_what_is_allowed(self):
         res = self.post({'action': 'selfdestruct'})
         self.assertEqual(res.status_code, 400)
