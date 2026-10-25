@@ -585,6 +585,39 @@ class ChatTranscriptTests(unittest.TestCase):
         self.assertNotIn('drumsticks', out['instructions'])
         self.assertNotIn('Absolutely', out['instructions'])
 
+    def test_a_sign_off_after_the_last_step_is_not_a_step(self):
+        # The common shape: the offer comes after the instructions, so a
+        # rule that only looked before the first heading never caught it.
+        chat = "\n".join([
+            "ChatGPT said:",
+            "**Garlic Butter Shrimp**",
+            "### Ingredients",
+            "- 1 lb shrimp",
+            "### Instructions",
+            "1. Melt the butter.",
+            "2. Add the shrimp.",
+            "",
+            "Let me know if you want it spicy!",
+        ])
+        out = ri.parse_recipe_chat(chat)
+        self.assertNotIn('spicy', out['instructions'])
+        self.assertIn('Melt the butter', out['instructions'])
+        self.assertIn('Add the shrimp', out['instructions'])
+
+    def test_a_step_opening_like_a_lead_in_is_kept(self):
+        # "Try this" only reads as throat-clearing before the recipe; once
+        # inside the steps it is an instruction and must survive.
+        chat = "\n".join([
+            "**Pan Toast**",
+            "Ingredients",
+            "2 slices bread",
+            "Instructions",
+            "1. Butter both sides.",
+            "2. Try this with the heat low so it does not scorch.",
+        ])
+        out = ri.parse_recipe_chat(chat)
+        self.assertIn('heat low', out['instructions'])
+
     def test_markdown_is_flattened_off_the_ingredients(self):
         out = ri.parse_recipe_chat(CHATGPT_PASTE)
         self.assertEqual(out['ingredients'][0], '8 boneless skinless chicken thighs')

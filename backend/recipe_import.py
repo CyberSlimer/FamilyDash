@@ -560,14 +560,24 @@ _ASSISTANT_TURN = re.compile(
     r'^\s*(?:chatgpt(?: said)?|claude(?: said)?|gemini(?: said)?|copilot(?: said)?'
     r'|assistant|answer|a)\s*:?\s*$', re.I)
 
-# Sign-offs and lead-ins. These bracket the recipe and are never part of it.
-_CHATTER = re.compile(
+# Closing offers. The recipe never resumes after one of these, so they are
+# dropped wherever they turn up - including after the last step, which is
+# exactly where an assistant puts them.
+_SIGN_OFF = re.compile(
     "^\\s*(?:"
-    "let me know|would you like|want me to|do you want|hope (?:you|this|that)|"
-    "enjoy\\b|anything else|happy (?:cooking|baking)|"
-    "here(?:'|’)?s (?:a|the|another|my)|"
-    "absolutely|sure[,!]|of course|great (?:choice|question)|"
-    "i(?:'|’)?d suggest|i suggest|try this"
+    "let me know|would you like|want me to|do you want|anything else|"
+    "hope (?:you|this|that)|happy (?:cooking|baking)|enjoy[!.]*$|"
+    "i can (?:also|give)|if you(?:'|’)d like"
+    ")", re.I)
+
+# Throat-clearing before the recipe starts. Only trusted ahead of the first
+# heading: inside a numbered list a step may legitimately open "Sure" or
+# "Try this", and dropping a step is the worse failure.
+_LEAD_IN = re.compile(
+    "^\\s*(?:"
+    "here(?:'|’)?s (?:a|the|another|my)|absolutely|sure[,!]|of course|"
+    "great (?:choice|question)|i(?:'|’)?d suggest|i suggest|try this|"
+    "this (?:one|recipe)"
     ")", re.I)
 
 # "Prep time: 10 minutes", "Serves: 4", "Yield - 12 cookies".
@@ -661,11 +671,11 @@ def parse_recipe_chat(text, name='', url=''):
         if is_section:
             seen_heading = True
 
-        # Chatter is only dropped around the recipe. Once a section heading has
-        # been seen, a line opening "Sure" is far likelier to be a step than a
-        # greeting, and dropping a step is the worse failure.
-        if not seen_heading and not is_section and _CHATTER.match(line):
-            continue
+        if not is_section:
+            if _SIGN_OFF.match(line):
+                continue
+            if not seen_heading and _LEAD_IN.match(line):
+                continue
 
         # The assistant almost always puts the dish name on a bold line of its
         # own, which beats the first thing it happens to say.
