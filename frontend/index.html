@@ -752,7 +752,12 @@
            nothing - a wall nobody can scroll should simply show less. */
         .kitchen-split {
             display: grid;
-            grid-template-rows: auto minmax(0, 1fr);
+            /* Proportional rather than auto: sized to content the week's cards
+               are mostly padding and took half the wall, leaving a three-column
+               shopping list about a fifth of it. Both panes get a guaranteed
+               share instead, and the list - the part you act on - gets the
+               larger one. */
+            grid-template-rows: minmax(0, 4fr) minmax(0, 5fr);
             gap: 26px;
             height: 100%;
             min-height: 0;
