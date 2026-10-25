@@ -1708,9 +1708,10 @@
                     fetchTodaysDinner();
                     break;
                 case 'meals':
+                    // One screen, two fetches. The 'grocery' case that used to
+                    // sit below this could never fire once the screens merged,
+                    // so the list stayed on its loading spinner for ever.
                     fetchMealPlan();
-                    break;
-                case 'grocery':
                     fetchGroceryList();
                     break;
                 case 'recipes':
