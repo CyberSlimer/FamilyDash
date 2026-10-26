@@ -2761,6 +2761,16 @@
         let recipesCache = [];
         let activeTags = new Set();
         let favouritesOnly = false;
+        // Nineteen tags wrapped to seven rows and pushed the first recipe off
+        // the screen - more chrome than content. Show the ones actually worth
+        // tapping and keep the rest one tap away.
+        let allTagsShown = false;
+        const TAGS_SHOWN = 6;
+
+        function toggleAllTags() {
+            allTagsShown = !allTagsShown;
+            renderRecipes();
+        }
 
         function toggleTagFilter(tag) {
             if (activeTags.has(tag)) activeTags.delete(tag); else activeTags.add(tag);
@@ -2821,10 +2831,21 @@
             };
 
             chip('\u2b50 Favourites', favouritesOnly, toggleFavouritesFilter);
-            for (const key of tags) {
+
+            // A chosen tag always stays visible, even if it is a rare one that
+            // would otherwise be folded away - a filter you cannot see is a
+            // filter you cannot turn off.
+            const shown = allTagsShown
+                ? tags
+                : tags.filter((key, i) => i < TAGS_SHOWN || activeTags.has(key));
+            for (const key of shown) {
                 chip(`${label(key)} ${counts[key]}`, activeTags.has(key),
                      () => toggleTagFilter(key));
             }
+            const hidden = tags.length - shown.length;
+            if (hidden > 0) chip(`+${hidden} more`, false, toggleAllTags);
+            else if (allTagsShown && tags.length > TAGS_SHOWN) chip('Fewer', false, toggleAllTags);
+
             if (filtering) chip('Clear', false, clearRecipeFilters);
         }
 
