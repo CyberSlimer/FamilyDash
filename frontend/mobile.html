@@ -1120,6 +1120,29 @@
             cursor: pointer;
         }
 
+        /* Filtering runs over an already-fetched list, so it is instant and the
+           controls can sit directly above the results with no spinner. */
+        .filter-bar { display: flex; gap: 8px; margin-bottom: 10px; }
+        .filter-bar .form-input { flex: 1; min-width: 0; }
+        .filter-bar .form-select { width: auto; flex-shrink: 0; }
+
+        .tag-filters { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+
+        .tag-filter {
+            background: #f0f0f2;
+            border: 1px solid transparent;
+            border-radius: 14px;
+            padding: 5px 11px;
+            font-size: 0.82em;
+            font-family: inherit;
+            color: #1d1d1f;
+            cursor: pointer;
+        }
+
+        .tag-filter.on { background: #5a6ad4; border-color: #5a6ad4; color: #fff; }
+
+        .filter-count { font-size: 0.82em; opacity: 0.65; margin-bottom: 10px; }
+
         .upload-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
         .upload-hint { font-size: 0.85em; opacity: 0.7; }
         .display-saved {
@@ -1157,6 +1180,19 @@
                     <h2 class="card-title">My Recipes</h2>
                     <button class="btn btn-secondary btn-small" onclick="showImportURL()">Import URL</button>
                 </div>
+                <div class="filter-bar">
+                    <input type="search" class="form-input" id="recipe-search"
+                           placeholder="Search recipes" autocomplete="off"
+                           oninput="renderRecipes()">
+                    <select class="form-select" id="recipe-sort" onchange="renderRecipes()">
+                        <option value="name">A–Z</option>
+                        <option value="recent">Newest</option>
+                        <option value="quick">Quickest</option>
+                        <option value="servings">Serves most</option>
+                    </select>
+                </div>
+                <div class="tag-filters" id="recipe-tag-filters"></div>
+                <div class="filter-count" id="recipe-count"></div>
                 <div id="recipes-list" class="loading">
                     <div class="spinner"></div>
                 </div>
@@ -2719,19 +2755,120 @@
         // RECIPES
         // =============================================
 
+        // The whole library, fetched once. Filtering a dozen-odd recipes in the
+        // browser is instant and types ahead without a round trip per keystroke;
+        // the API's own search and tag parameters remain for anything larger.
+        let recipesCache = [];
+        let activeTags = new Set();
+        let favouritesOnly = false;
+
+        function toggleTagFilter(tag) {
+            if (activeTags.has(tag)) activeTags.delete(tag); else activeTags.add(tag);
+            renderRecipes();
+        }
+
+        function toggleFavouritesFilter() {
+            favouritesOnly = !favouritesOnly;
+            renderRecipes();
+        }
+
+        function clearRecipeFilters() {
+            activeTags.clear();
+            favouritesOnly = false;
+            document.getElementById('recipe-search').value = '';
+            renderRecipes();
+        }
+
+        function renderTagFilters() {
+            const counts = {};
+            for (const recipe of recipesCache) {
+                for (const tag of recipe.tags || []) {
+                    const clean = String(tag).trim();
+                    if (clean) counts[clean] = (counts[clean] || 0) + 1;
+                }
+            }
+            // Commonest first, so the tags worth tapping are not below the fold.
+            const tags = Object.keys(counts).sort(
+                (a, b) => counts[b] - counts[a] || a.localeCompare(b));
+            const filtering = activeTags.size || favouritesOnly
+                || document.getElementById('recipe-search').value.trim();
+
+            const bar = document.getElementById('recipe-tag-filters');
+            bar.innerHTML = '';
+            const chip = (label, on, handler) => {
+                const button = document.createElement('button');
+                button.className = 'tag-filter' + (on ? ' on' : '');
+                button.textContent = label;
+                // Bound as a listener rather than interpolated into markup:
+                // a tag is user text and may well contain a quote.
+                button.addEventListener('click', handler);
+                bar.appendChild(button);
+            };
+
+            chip('\u2b50 Favourites', favouritesOnly, toggleFavouritesFilter);
+            for (const tag of tags) {
+                chip(`${tag} ${counts[tag]}`, activeTags.has(tag), () => toggleTagFilter(tag));
+            }
+            if (filtering) chip('Clear', false, clearRecipeFilters);
+        }
+
+        function filteredRecipes() {
+            const needle = document.getElementById('recipe-search').value.trim().toLowerCase();
+            const sort = document.getElementById('recipe-sort').value;
+            const total = r => (r.prep_time || 0) + (r.cook_time || 0);
+
+            const list = recipesCache.filter(recipe => {
+                if (favouritesOnly && !recipe.favorite) return false;
+                const tags = (recipe.tags || []).map(t => String(t).trim());
+                // Every chosen tag has to match, so a second tag narrows rather
+                // than widens - which is what picking one looks like it does.
+                for (const tag of activeTags) if (!tags.includes(tag)) return false;
+                if (!needle) return true;
+                return [recipe.name, recipe.description || '',
+                        ...(recipe.ingredients || []), ...tags]
+                    .join(' ').toLowerCase().includes(needle);
+            });
+
+            const by = {
+                name: (a, b) => a.name.localeCompare(b.name),
+                recent: (a, b) => (b.id || 0) - (a.id || 0),
+                // No times recorded does not mean quick, it means unknown, so
+                // those sink to the bottom rather than leading the list.
+                quick: (a, b) => (total(a) || 1e6) - (total(b) || 1e6),
+                servings: (a, b) => (b.servings || 0) - (a.servings || 0),
+            };
+            return list.sort(by[sort] || by.name);
+        }
+
         async function loadRecipes() {
             try {
                 const response = await fetch(`${API_BASE}/recipes`);
-                const recipes = await response.json();
-                
-                const container = document.getElementById('recipes-list');
-                container.classList.remove('loading');
-                
-                if (recipes.length === 0) {
-                    container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📖</div><p>No recipes yet. Add your first recipe!</p></div>';
-                    return;
-                }
-                
+                recipesCache = await response.json();
+            } catch (error) {
+                console.error('Error loading recipes:', error);
+            }
+            renderRecipes();
+        }
+
+        function renderRecipes() {
+            const container = document.getElementById('recipes-list');
+            container.classList.remove('loading');
+            renderTagFilters();
+
+            const recipes = filteredRecipes();
+            document.getElementById('recipe-count').textContent = recipesCache.length
+                ? `${recipes.length} of ${recipesCache.length} recipe${recipesCache.length === 1 ? '' : 's'}`
+                : '';
+
+            if (!recipesCache.length) {
+                container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">📖</div><p>No recipes yet. Tap <strong>+</strong> to add one.</p></div>';
+                return;
+            }
+            if (!recipes.length) {
+                container.innerHTML = '<div class="empty-state"><p>Nothing matches that.</p></div>';
+                return;
+            }
+
                 container.innerHTML = `
                     <ul class="item-list">
                         ${recipes.map(recipe => `
@@ -2758,9 +2895,6 @@
                         `).join('')}
                     </ul>
                 `;
-            } catch (error) {
-                console.error('Error loading recipes:', error);
-            }
         }
 
         // A photo chosen while adding a recipe. Uploading it needs an id, which
