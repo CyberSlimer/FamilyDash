@@ -2779,14 +2779,29 @@
             renderRecipes();
         }
 
+        // Tags arrive from several places - typed here, read off a web page,
+        // pulled out of a photo - so "Breakfast" and "breakfast" both turn up
+        // and are plainly the same tag. Grouped case-insensitively, labelled
+        // with whichever spelling is commonest.
+        function tagKey(tag) {
+            return String(tag).trim().toLowerCase();
+        }
+
         function renderTagFilters() {
             const counts = {};
+            const spellings = {};
             for (const recipe of recipesCache) {
                 for (const tag of recipe.tags || []) {
                     const clean = String(tag).trim();
-                    if (clean) counts[clean] = (counts[clean] || 0) + 1;
+                    if (!clean) continue;
+                    const key = tagKey(clean);
+                    counts[key] = (counts[key] || 0) + 1;
+                    spellings[key] = spellings[key] || {};
+                    spellings[key][clean] = (spellings[key][clean] || 0) + 1;
                 }
             }
+            const label = key => Object.entries(spellings[key])
+                .sort((a, b) => b[1] - a[1])[0][0];
             // Commonest first, so the tags worth tapping are not below the fold.
             const tags = Object.keys(counts).sort(
                 (a, b) => counts[b] - counts[a] || a.localeCompare(b));
@@ -2806,8 +2821,9 @@
             };
 
             chip('\u2b50 Favourites', favouritesOnly, toggleFavouritesFilter);
-            for (const tag of tags) {
-                chip(`${tag} ${counts[tag]}`, activeTags.has(tag), () => toggleTagFilter(tag));
+            for (const key of tags) {
+                chip(`${label(key)} ${counts[key]}`, activeTags.has(key),
+                     () => toggleTagFilter(key));
             }
             if (filtering) chip('Clear', false, clearRecipeFilters);
         }
@@ -2820,9 +2836,10 @@
             const list = recipesCache.filter(recipe => {
                 if (favouritesOnly && !recipe.favorite) return false;
                 const tags = (recipe.tags || []).map(t => String(t).trim());
+                const keys = tags.map(tagKey);
                 // Every chosen tag has to match, so a second tag narrows rather
                 // than widens - which is what picking one looks like it does.
-                for (const tag of activeTags) if (!tags.includes(tag)) return false;
+                for (const tag of activeTags) if (!keys.includes(tag)) return false;
                 if (!needle) return true;
                 return [recipe.name, recipe.description || '',
                         ...(recipe.ingredients || []), ...tags]
