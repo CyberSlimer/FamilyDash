@@ -1087,6 +1087,39 @@
             padding: 4px 6px;
             font-size: 0.78em;
         }
+        /* The three ways a recipe gets in. Big targets, because this is the
+           first thing you meet and it is operated one-handed in a kitchen. */
+        .import-choice {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            width: 100%;
+            text-align: left;
+            background: #f5f5f7;
+            border: 1px solid #e3e3e6;
+            border-radius: 14px;
+            padding: 16px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            font: inherit;
+            color: inherit;
+        }
+
+        .import-choice:active { background: #ececf0; }
+        .import-choice .choice-icon { font-size: 1.7em; line-height: 1; }
+        .import-choice strong { display: block; font-size: 1.02em; }
+        .import-choice small { opacity: 0.65; font-size: 0.85em; }
+
+        .import-back {
+            background: none;
+            border: none;
+            padding: 0 0 10px;
+            font: inherit;
+            font-size: 0.9em;
+            color: #5a6ad4;
+            cursor: pointer;
+        }
+
         .upload-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
         .upload-hint { font-size: 0.85em; opacity: 0.7; }
         .display-saved {
@@ -1521,11 +1554,71 @@
         </div>
     </div>
 
-    <!-- Import URL Modal -->
+    <!-- Add a Recipe -->
     <div id="import-modal" class="modal">
         <div class="modal-content">
-            <div class="modal-header">Import Recipe</div>
-            <form onsubmit="importRecipe(event)" id="import-url-form">
+            <div class="modal-header" id="import-modal-title">Add a Recipe</div>
+
+            <!-- Three ways in, named plainly. Everything below is one of them. -->
+            <div id="import-choose">
+                <button type="button" class="import-choice" onclick="showImportStep('photo')">
+                    <span class="choice-icon">📷</span>
+                    <span><strong>Photo of a recipe</strong>
+                          <small>Take one now, or pick a picture you already have</small></span>
+                </button>
+                <button type="button" class="import-choice" onclick="showImportStep('type')">
+                    <span class="choice-icon">✍️</span>
+                    <span><strong>Type or paste it</strong>
+                          <small>A blank card, or paste text from anywhere</small></span>
+                </button>
+                <button type="button" class="import-choice" onclick="showImportStep('url')">
+                    <span class="choice-icon">🔗</span>
+                    <span><strong>From a web link</strong>
+                          <small>Paste the address of a recipe page</small></span>
+                </button>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('import-modal')">Cancel</button>
+                </div>
+            </div>
+
+            <!-- Photo. Two inputs rather than one: `capture` forces the camera
+                 on a phone, so a single input cannot also offer the library. -->
+            <div id="import-photo-step" style="display: none;">
+                <button type="button" class="import-back" onclick="showImportStep('choose')">‹ Back</button>
+                <input type="file" id="import-photo-camera" accept="image/*" capture="environment"
+                       style="display: none;" onchange="importRecipePhoto(this)">
+                <input type="file" id="import-photo-library" accept="image/*"
+                       style="display: none;" onchange="importRecipePhoto(this)">
+                <button type="button" class="import-choice"
+                        onclick="document.getElementById('import-photo-camera').click()">
+                    <span class="choice-icon">📸</span>
+                    <span><strong>Take a photo</strong>
+                          <small>Page flat, filling the frame, light not behind you</small></span>
+                </button>
+                <button type="button" class="import-choice"
+                        onclick="document.getElementById('import-photo-library').click()">
+                    <span class="choice-icon">🖼️</span>
+                    <span><strong>Upload a photo</strong>
+                          <small>From your camera roll or files</small></span>
+                </button>
+                <div class="form-hint" id="import-photo-status"></div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('import-modal')">Cancel</button>
+                </div>
+            </div>
+
+            <!-- Type or paste. -->
+            <div id="import-type-step" style="display: none;">
+                <button type="button" class="import-back" onclick="showImportStep('choose')">‹ Back</button>
+                <button type="button" class="import-choice" onclick="startBlankRecipe()">
+                    <span class="choice-icon">📝</span>
+                    <span><strong>Start a blank card</strong>
+                          <small>Type the recipe in yourself</small></span>
+                </button>
+            </div>
+
+            <form onsubmit="importRecipe(event)" id="import-url-form" style="display: none;">
+                <button type="button" class="import-back" onclick="showImportStep('choose')">‹ Back</button>
                 <div class="form-group">
                     <label class="form-label">Recipe URL</label>
                     <input type="url" class="form-input" id="import-url" placeholder="https://..." required>
@@ -1552,15 +1645,7 @@
                     <button type="submit" class="btn btn-primary">Read Recipe</button>
                 </div>
             </form>
-            <input type="file" id="import-photo-file" accept="image/*" capture="environment"
-                   style="display: none;" onchange="importRecipePhoto(this)">
-            <div class="quick-picks" id="import-alternatives">
-                <button type="button" class="chip" id="import-paste-toggle"
-                        onclick="showPasteImport()">Paste a recipe or chat</button>
-                <button type="button" class="chip" id="import-photo-btn"
-                        onclick="document.getElementById('import-photo-file').click()">📷 Photograph a page</button>
-            </div>
-            <div class="form-hint" id="import-photo-status"></div>
+
         </div>
     </div>
 
@@ -2877,19 +2962,46 @@
         // sent on save. Without this they were parsed and then thrown away.
         let pendingImport = {};
 
+        const IMPORT_STEPS = {
+            choose: { el: 'import-choose',     title: 'Add a Recipe' },
+            photo:  { el: 'import-photo-step', title: 'Photo of a Recipe' },
+            type:   { el: 'import-type-step',  title: 'Type or Paste' },
+            url:    { el: 'import-url-form',   title: 'From a Web Link' },
+            paste:  { el: 'import-paste-form', title: 'Paste the Recipe' },
+        };
+
+        function showImportStep(step) {
+            const chosen = IMPORT_STEPS[step] || IMPORT_STEPS.choose;
+            for (const [name, info] of Object.entries(IMPORT_STEPS)) {
+                document.getElementById(info.el).style.display = name === step ? '' : 'none';
+            }
+            // The paste box lives under "type or paste", so that step shows both.
+            if (step === 'type') document.getElementById('import-paste-form').style.display = '';
+            document.getElementById('import-modal-title').textContent = chosen.title;
+            document.getElementById('import-photo-status').textContent = '';
+            if (step !== 'paste') document.getElementById('import-paste-reason').textContent = '';
+        }
+
+        // Kept because a blocked site calls it with a reason: the URL route
+        // dead-ends there, and pasting is the way through.
         function showPasteImport(reason = '') {
-            document.getElementById('import-url-form').style.display = 'none';
-            document.getElementById('import-alternatives').style.display = 'none';
-            document.getElementById('import-paste-form').style.display = '';
+            showImportStep('paste');
             document.getElementById('import-paste-reason').textContent = reason;
             document.getElementById('import-text').focus();
         }
 
         function showUrlImport() {
-            document.getElementById('import-url-form').style.display = '';
-            document.getElementById('import-alternatives').style.display = '';
-            document.getElementById('import-paste-form').style.display = 'none';
-            document.getElementById('import-paste-reason').textContent = '';
+            showImportStep('url');
+        }
+
+        function startBlankRecipe() {
+            // A hand-typed recipe must not inherit the source link or photo of
+            // whatever was imported last.
+            pendingImport = {};
+            closeModal('import-modal');
+            document.getElementById('recipe-form').reset();
+            clearRecipePhoto();
+            openModal('recipe-modal');
         }
 
         function fillRecipeForm(data) {
@@ -2955,8 +3067,6 @@
             if (!file) return;
 
             const status = document.getElementById('import-photo-status');
-            const button = document.getElementById('import-photo-btn');
-            button.disabled = true;
             status.textContent = 'Reading the photo on the Pi - this takes a few seconds...';
             status.classList.remove('hint-warn');
 
@@ -2971,8 +3081,6 @@
             } catch (err) {
                 status.textContent = err.message;
                 status.classList.add('hint-warn');
-            } finally {
-                button.disabled = false;
             }
         }
 
@@ -4760,10 +4868,7 @@
         function showAddModal() {
             switch(currentTab) {
                 case 'recipes':
-                    // A recipe typed by hand must not inherit the source link
-                    // or photo of whatever was imported last.
-                    pendingImport = {};
-                    openModal('recipe-modal');
+                    openAddRecipe();
                     break;
                 case 'meals':
                     openMealModal();
@@ -4781,7 +4886,15 @@
         }
 
         function showImportURL() {
-            showUrlImport();
+            showImportStep('url');
+            openModal('import-modal');
+        }
+
+        // Every route in starts at the same three choices.
+        function openAddRecipe() {
+            document.getElementById('import-url-form').reset();
+            document.getElementById('import-paste-form').reset();
+            showImportStep('choose');
             openModal('import-modal');
         }
 
