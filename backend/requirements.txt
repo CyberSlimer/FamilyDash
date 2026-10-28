@@ -32,5 +32,8 @@ rpi-lgpio>=0.6; sys_platform == "linux" and (platform_machine == "armv7l" or pla
 Pillow
 # Reading a recipe off a photograph. Needs the tesseract-ocr system
 # package too; without either, photo import reports that rather than failing.
-pytesseract>=10.0
+# 0.3.x is the current series - pytesseract has never released a 1.0, let
+# alone a 10.0. A pin above every published version makes pip fail the
+# whole file, so install.sh installed nothing after this line.
+pytesseract>=0.3.10
 pillow-heif>=0.13; platform_system != "Windows"
