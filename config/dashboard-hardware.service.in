@@ -10,6 +10,10 @@ Type=simple
 # so print() output never reaches the journal and the service looks
 # silent even while it is working.
 Environment=PYTHONUNBUFFERED=1
+# As with the backend: read the virtualenv only, never ~/.local. The GPIO
+# binding especially - rpi-lgpio and RPi.GPIO claim the same import name,
+# and the wrong one fails at edge detection, long after startup looks fine.
+Environment=PYTHONNOUSERSITE=1
 User=@@RUN_USER@@
 WorkingDirectory=@@APP_DIR@@/hardware
 ExecStart=@@PYTHON@@ @@APP_DIR@@/hardware/controller.py

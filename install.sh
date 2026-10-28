@@ -116,6 +116,17 @@ fi
 "$VENV/bin/pip" install --quiet --upgrade pip
 "$VENV/bin/pip" install -r "$APP_DIR/backend/requirements.txt"
 
+# Pinning caldav below 2 in requirements.txt stops a fresh install pulling the
+# niquests/urllib3-future/qh3 stack in, but pip never removes what an earlier
+# install already put there, and urllib3-future's .pth deletes the real urllib3
+# package on every interpreter start for as long as it stays. So an upgrade has
+# to take it out by hand, then put urllib3 back.
+if "$VENV/bin/pip" show urllib3-future >/dev/null 2>&1; then
+    echo "Removing the HTTP/3 stack left by an older caldav..."
+    "$VENV/bin/pip" uninstall --quiet --yes niquests urllib3-future qh3 jh2 wassima || true
+    "$VENV/bin/pip" install --quiet --force-reinstall "urllib3>=2,<3"
+fi
+
 # ---------------------------------------------------------------------------
 echo -e "${GREEN}[4/$TOTAL] Initializing database...${NC}"
 # init_db() also adds columns and seeds settings introduced since an older

@@ -22,6 +22,7 @@ from calendar_sync import (CalendarSync, DEFAULT_COLORS, read_raw_config,
 import ingredients as ing
 import weather as wx
 import recipe_import as rimport
+import selfcheck
 
 # Paths
 basedir = os.path.abspath(os.path.dirname(__file__))
@@ -2076,6 +2077,13 @@ def init_db():
 
 if __name__ == '__main__':
     init_db()
+
+    # Before anything opens a socket: say which HTTP stack is actually loaded,
+    # and start watching the descriptor table. A leak there does not crash the
+    # process, it quietly stops it answering, which is far harder to spot.
+    selfcheck.report_shadowed_imports()
+    if selfcheck.start_descriptor_watchdog() is None:
+        log.info("No descriptor watchdog on this platform - nothing to read")
 
     if calendar_sync.enabled:
         log.info("Calendar sync: %d calendar(s) configured, refreshing every %ss",

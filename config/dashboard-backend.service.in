@@ -11,6 +11,16 @@ Type=simple
 # so print() output never reaches the journal and the service looks
 # silent even while it is working.
 Environment=PYTHONUNBUFFERED=1
+# A virtualenv does not hide ~/.local/lib/pythonX.Y/site-packages, and what
+# is found there wins over the virtualenv's own copy of the same package.
+# One stray "pip install --user" elsewhere on the Pi can therefore swap out
+# a dependency this service was tested with - which is how a substituted
+# urllib3 once took the backend down. The service reads only its virtualenv.
+Environment=PYTHONNOUSERSITE=1
+# The default soft limit is 1024, and the backend holds a socket per calendar
+# feed, per phone and per kiosk poll. Headroom is not a fix for a leak, but it
+# turns one into something the watchdog reports rather than a dead wall.
+LimitNOFILE=8192
 User=@@RUN_USER@@
 WorkingDirectory=@@APP_DIR@@/backend
 ExecStart=@@PYTHON@@ @@APP_DIR@@/backend/app.py
