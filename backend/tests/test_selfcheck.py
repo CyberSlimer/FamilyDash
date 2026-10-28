@@ -88,6 +88,15 @@ class ShadowedImportTests(unittest.TestCase):
                          os.path.join(sys.prefix, 'lib', 'pretend_http', '__init__.py'))
         self.assertEqual(selfcheck.shadowed_imports(('pretend_http',)), [])
 
+    def test_module_from_the_system_python_is_not_reported(self):
+        # The venv is built with --system-site-packages on purpose, so
+        # Debian's dist-packages is a legitimate source. Flagging it would
+        # mean a warning on every boot, which is a warning nobody reads.
+        self.fake_module('pretend_http',
+                         os.path.join(sys.base_prefix, 'lib', 'python3',
+                                      'dist-packages', 'pretend_http', '__init__.py'))
+        self.assertEqual(selfcheck.shadowed_imports(('pretend_http',)), [])
+
     def test_module_from_user_site_is_reported(self):
         stray = os.path.join(os.path.abspath(os.sep), 'home', 'pi', '.local',
                              'lib', 'pretend_http', '__init__.py')

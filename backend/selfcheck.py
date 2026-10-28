@@ -64,35 +64,40 @@ def open_descriptors():
 
 
 def shadowed_imports(modules=WATCHED_IMPORTS):
-    """Watched modules that resolved outside this virtualenv.
+    """Watched modules that came from neither the virtualenv nor the system.
 
-    Returns a list of (name, path). A package installed into ``~/.local``
-    takes precedence over the same name in a virtualenv, so a stray
-    ``pip install --user`` elsewhere on the machine can quietly replace a
-    dependency here. Outside a virtualenv there is nothing to compare
-    against, so the check says nothing rather than guessing.
+    Returns a list of (name, path). The virtualenv here is deliberately
+    built with --system-site-packages, so Debian's own
+    /usr/lib/python3/dist-packages is a legitimate source and must not be
+    reported - that is the difference between this check being useful and
+    it crying wolf on every boot. What is left over is per-user
+    site-packages, ~/.local, which takes precedence over a virtualenv's own
+    copy of a package and is where a stray install can quietly replace a
+    dependency. Outside a virtualenv there is nothing to compare against,
+    so the check says nothing rather than guessing.
     """
     if sys.prefix == sys.base_prefix:
         return []
 
-    inside = os.path.realpath(sys.prefix) + os.sep
+    expected = (os.path.realpath(sys.prefix) + os.sep,
+                os.path.realpath(sys.base_prefix) + os.sep)
     found = []
     for name in modules:
         module = sys.modules.get(name)
         path = getattr(module, '__file__', None) if module else None
-        if path and not os.path.realpath(path).startswith(inside):
+        if path and not os.path.realpath(path).startswith(expected):
             found.append((name, path))
     return found
 
 
 def report_shadowed_imports(modules=WATCHED_IMPORTS):
-    """Log anything loaded from outside the virtualenv. Returns what it found."""
+    """Log anything loaded from an unexpected place. Returns what it found."""
     found = shadowed_imports(modules)
     for name, path in found:
-        log.warning("%s was loaded from %s, which is outside this virtualenv - "
-                    "a package installed with 'pip install --user' is "
-                    "overriding the one this dashboard was tested against",
-                    name, path)
+        log.warning("%s was loaded from %s - neither this virtualenv nor the "
+                    "system Python. A per-user install (~/.local) takes "
+                    "precedence over both, so the dashboard is running "
+                    "against a package it was not tested with.", name, path)
     return found
 
 
